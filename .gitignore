@@ -1,0 +1,11 @@
+# IDE specific files
+.idea
+
+# Virtual Environment
+venv
+
+# Python Excludes
+*__pycache__
+build
+dist
+*.egg-info
