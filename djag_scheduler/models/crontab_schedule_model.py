@@ -100,8 +100,8 @@ class CrontabSchedule(models.Model):
     @property
     def crontab(self):
         return ' '.join([
-            self.minute, self.hour, self.day_of_week,
-            self.day_of_month, self.month_of_year
+            self.minute, self.hour, self.day_of_month,
+            self.month_of_year, self.day_of_week
         ])
 
     @classmethod
