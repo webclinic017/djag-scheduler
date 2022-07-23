@@ -13,7 +13,9 @@ from django.core.cache.backends.base import InvalidCacheBackendError
 from django.utils.timezone import is_aware
 
 from celery import current_app
-from celery.beat import Scheduler, ScheduleEntry
+from celery.beat import (
+    Scheduler, ScheduleEntry, _evaluate_entry_args, _evaluate_entry_kwargs  # noqa
+)
 from celery.utils.log import get_logger
 from kombu.utils.encoding import safe_repr
 from croniter import croniter
@@ -347,19 +349,44 @@ class DjagScheduler(Scheduler):
 
         return False
 
+    def _apply_async(self, entry, producer):
+        """Core logic of apply_async"""
+        task = self.app.tasks.get(entry.task)
+        entry_args = _evaluate_entry_args(entry.args)
+        entry_kwargs = _evaluate_entry_kwargs(entry.kwargs)
+
+        if task:
+            return task.apply_async(
+                entry_args, entry_kwargs, producer=producer, **entry.options
+            )
+        else:
+            return self.send_task(
+                entry.task, entry_args, entry_kwargs, producer=producer, **entry.options
+            )
+
     def apply_async(self, entry, producer=None, advance=True, **kwargs):
         """Override apply_sync to include custom task_id and to activate entry"""
         task_id = str(uuid.uuid4())
         cron = kwargs.pop('cron', None)
 
+        # Try passing djag_run_dt and on TypeError pass with out it.
+        entry.kwargs['djag_run_dt'] = cron
         entry.options.update({'task_id': task_id})
         try:
-            result = super().apply_async(entry, producer, advance, **kwargs)
+            try:
+                result = self._apply_async(entry, producer)
+            except TypeError:
+                entry.kwargs.pop('djag_run_dt')
+                result = self._apply_async(entry, producer)
         except Exception as exc:
             raise exc
         else:
             self._taskid_to_entry[task_id] = entry.id, cron
             entry.activate(cron)
+        finally:
+            self._tasks_since_sync += 1
+            if self.should_sync():
+                self._do_sync()
 
         return result
 
