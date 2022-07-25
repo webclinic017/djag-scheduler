@@ -1,17 +1,16 @@
 """Task Dependency model"""
 
-from django.db import models
-from django.db.models import signals
-from django.core.exceptions import ValidationError
-
 from collections import defaultdict
 
-from toposort import toposort
+from django.core.exceptions import ValidationError
+from django.db import models
+from django.db.models import signals
 from toposort import CircularDependencyError
+from toposort import toposort
 
+import djag_scheduler.models.user_action_model as action_choices
 from .periodic_task_model import PeriodicTask
 from .user_action_model import UserAction
-import djag_scheduler.models.user_action_model as action_choices
 
 
 class TaskDependency(models.Model):
@@ -48,8 +47,35 @@ class TaskDependency(models.Model):
 
     def clean(self):
         """Clean model data"""
+
+        # If the <depender, dependee> already exists let the unique key validator
+        # throw the error
+        if TaskDependency.objects.filter(
+                depender=self.depender, dependee=self.dependee
+        ):
+            return
+
+        # Validate self dependency
         if self.depender == self.dependee and not self.future_depends:
             raise ValidationError('A task can only future depend on itself')
+
+        # Validate depender, dependee relation
+        if td := TaskDependency.objects.filter(
+                depender=self.dependee, dependee=self.depender
+        ):
+            if not self.future_depends:
+                raise ValidationError(
+                    '"{0}" already exits. This should be a future dependency'.format(
+                        td[0]
+                    )
+                )
+        else:
+            if self.future_depends:
+                raise ValidationError(
+                    'The first dependency between {0}, {1} can not be a future dependency'.format(
+                        self.depender.name, self.dependee.name
+                    )
+                )
 
         # Detect cycles
 
@@ -103,7 +129,7 @@ class TaskDependency(models.Model):
                         except Exception as exc:
                             raise exc
                         break
-                except: # noqa
+                except:  # noqa
                     raise ValueError('Failed to compare the field ' + field + ' between the current and old model')
 
     def __str__(self):
