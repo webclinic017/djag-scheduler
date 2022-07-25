@@ -78,34 +78,20 @@ class TaskDependency(models.Model):
                         )
                     )
 
-        # Detect cycles
+        # Basic Cycle-Detection
 
         # Group tasks by depender
         task_groups = defaultdict(set)
         for task_depend in TaskDependency.objects.all():
-            task_groups[task_depend.depender.id].add(
-                -task_depend.dependee.id if task_depend.future_depends
-                else task_depend.dependee.id
-            )
+            if not task_depend.future_depends:
+                task_groups[task_depend.depender.id].add(task_depend.dependee.id)
 
-        task_dag = {}
-        for depender, dependee in task_groups.items():
-            task_dag[depender] = dependee
-
-        # Add new dependency
-        try:
-            task_dag[self.depender.id].add(
-                -self.dependee.id if self.future_depends
-                else self.dependee.id
-            )
-        except KeyError:
-            if self.future_depends:
-                task_dag[self.depender.id] = {-self.dependee.id}
-            else:
-                task_dag[self.depender.id] = {self.dependee.id}
+        # Add self to dependency dict
+        if not self.future_depends:
+            task_groups[self.depender.id].add(self.dependee.id)
 
         try:
-            _ = tuple(toposort(task_dag))
+            _ = tuple(toposort(task_groups))
         except CircularDependencyError:
             raise ValidationError('Task-Dependency creates a cycle in DAG')
 
