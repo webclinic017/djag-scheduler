@@ -59,23 +59,24 @@ class TaskDependency(models.Model):
         if self.depender == self.dependee and not self.future_depends:
             raise ValidationError('A task can only future depend on itself')
 
-        # Validate depender, dependee relation
-        if td := TaskDependency.objects.filter(
-                depender=self.dependee, dependee=self.depender
-        ):
-            if not self.future_depends:
-                raise ValidationError(
-                    '"{0}" already exits. This should be a future dependency'.format(
-                        td[0]
+        # Validate depender, dependee relation (skip in case of self dependency)
+        if self.depender != self.dependee:
+            if td := TaskDependency.objects.filter(
+                    depender=self.dependee, dependee=self.depender
+            ):
+                if not self.future_depends:
+                    raise ValidationError(
+                        '"{0}" already exits. This should be a future dependency'.format(
+                            td[0]
+                        )
                     )
-                )
-        else:
-            if self.future_depends:
-                raise ValidationError(
-                    'The first dependency between {0}, {1} can not be a future dependency'.format(
-                        self.depender.name, self.dependee.name
+            else:
+                if self.future_depends:
+                    raise ValidationError(
+                        'The first dependency between {0}, {1} can not be a future dependency'.format(
+                            self.depender.name, self.dependee.name
+                        )
                     )
-                )
 
         # Detect cycles
 
