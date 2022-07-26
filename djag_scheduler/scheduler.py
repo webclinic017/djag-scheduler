@@ -153,50 +153,42 @@ class DjagTaskEntry(ScheduleEntry):
 
         cron, sec = self.next_cron()
         if sec:
+            # Skip dependency resolution when there is time to wait.
+            # We might need to wait longer due to unresolved dependency
             return cron, sec
 
         next_tick = -math.inf
         for task_pk, future_depends, change_dt in DjagTaskDAG.get_dependency(self.id):
-            # Handle initial case for future dependencies
-            if future_depends:
-                if change_dt and (not self.last_cron_start or self.last_cron_start < change_dt):
-                    continue
-
-            # Compute task's last_cron and running status
             task_entry = self.scheduler.get_entry(task_pk)
 
-            if task_entry:
-                task_cron_end = task_entry.last_cron_end
-                task_running = task_entry.running > 0
-            else:
-                # Read the db to get values
-                try:
-                    task = PeriodicTask.objects.get(pk=task_pk)
-                except Exception:  # noqa
-                    task_cron_end = None
+            if future_depends:
+                if task_entry.running:
+                    # Wait for the running task to complete
+                    next_tick = max(next_tick, TASK_ESTIMATED_RUN_TIME)
                 else:
-                    task_cron_end = task.last_cron_end
+                    task_cron, task_sec = task_entry.next_cron()
 
-                task_running = False
+                    # Unblock self if task's next cron falls beyond self's last cron
+                    if self.last_cron and task_cron <= self.last_cron:
+                        next_tick = max(next_tick, task_sec + TASK_ESTIMATED_RUN_TIME)
+                    else:
+                        next_tick = max(next_tick, sec)
+            else:
+                if task_entry.last_cron and cron <= task_entry.last_cron:
+                    # Clearance from the dependency
+                    next_tick = max(next_tick, sec)
+                elif task_entry.running:
+                    # Wait for task to complete
+                    next_tick = max(next_tick, TASK_ESTIMATED_RUN_TIME)
+                elif self.scheduler.is_disabled(task_entry.id):
+                    # Wait for schedule changes
+                    next_tick = max(next_tick, SCHEDULE_CHECK_INTERVAL)
+                else:
+                    # Wait for task's next execution + run-time (best case scenario)
+                    _, task_sec = task_entry.next_cron()
+                    next_tick = max(next_tick, task_sec + TASK_ESTIMATED_RUN_TIME)
 
-            if task_cron_end and (not self.last_cron_start or self.last_cron_start < task_cron_end):
-                # Clearance from the dependency
-                pass
-            elif task_running:
-                # Wait for task to complete execution
-                next_tick = max(next_tick, TASK_ESTIMATED_RUN_TIME)
-            elif self.scheduler.is_disabled(task_entry.id):
-                # Wait for schedule changes
-                next_tick = max(next_tick, SCHEDULE_CHECK_INTERVAL)
-            elif task_entry:
-                # Wait for task's next execution + run-time (best case scenario)
-                _, task_sec = task_entry.next_cron()
-                next_tick = max(next_tick, task_sec + TASK_ESTIMATED_RUN_TIME)
-
-        # Default case
-        next_tick = max(next_tick, sec)
-
-        return cron, next_tick
+        return cron, max(next_tick, sec)
 
     def save(self, fields=('running', 'last_cron', 'last_cron_start',
                            'last_cron_end', 'total_run_count')):
