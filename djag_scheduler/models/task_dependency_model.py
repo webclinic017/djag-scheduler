@@ -50,46 +50,51 @@ class TaskDependency(models.Model):
 
         # If the <depender, dependee> already exists let the unique key validator
         # throw the error
-        if TaskDependency.objects.filter(
+        if td := self.__class__.objects.filter(
                 depender=self.depender, dependee=self.dependee
         ):
-            return
+            # In case of update self.pk == td[0].pk (needs further validation)
+            if self.pk != td[0].pk:
+                return
 
         # Validate self dependency
         if self.depender == self.dependee and not self.future_depends:
             raise ValidationError('A task can only future depend on itself')
 
-        # Validate depender, dependee relation (skip in case of self dependency)
-        if self.depender != self.dependee:
-            if td := TaskDependency.objects.filter(
-                    depender=self.dependee, dependee=self.depender
-            ):
-                if not self.future_depends:
-                    raise ValidationError(
-                        '"{0}" already exits. This should be a future dependency'.format(
-                            td[0]
-                        )
-                    )
+        # Validate dependency graph constraints and basic cycle-detection
+        direct_deps = set()
+        future_deps = set()
+        task_groups = defaultdict(set)  # Group tasks by depender
+
+        tds = self.__class__.objects.all()
+        if self._state.adding:
+            tds = *tds, self
+
+        for td in tds:
+            if td.pk == self.pk:
+                # In case of update accept new changes
+                td = self
+
+            if td.future_depends:
+                future_deps.add((td.dependee, td.depender))
+
+                if td.depender == td.dependee:
+                    # Add self dependency to direct deps as well
+                    direct_deps.add((td.depender, td.dependee))
             else:
-                if self.future_depends:
-                    raise ValidationError(
-                        'The first dependency between {0}, {1} can not be a future dependency'.format(
-                            self.depender.name, self.dependee.name
-                        )
-                    )
+                direct_deps.add((td.depender, td.dependee))
 
-        # Basic Cycle-Detection
+                # Add only direct dependencies to task group
+                task_groups[td.depender.id].add(td.dependee.id)
 
-        # Group tasks by depender
-        task_groups = defaultdict(set)
-        for task_depend in TaskDependency.objects.all():
-            if not task_depend.future_depends:
-                task_groups[task_depend.depender.id].add(task_depend.dependee.id)
+        # Validate dependency graph constraints
+        orphans = future_deps - direct_deps
+        if orphans:
+            raise ValidationError('This change will orphan {0}'.format(
+                ', '.join(['{0} --D+ {1}'.format(orphan[1].name, orphan[0].name) for orphan in orphans])
+            ))
 
-        # Add self to dependency dict
-        if not self.future_depends:
-            task_groups[self.depender.id].add(self.dependee.id)
-
+        # Detect basic cycles
         try:
             _ = tuple(toposort(task_groups))
         except CircularDependencyError:
