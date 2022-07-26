@@ -138,6 +138,19 @@ class TaskDependencyAdmin(admin.ModelAdmin):
     search_fields = ('depender__name', 'depender__task', 'dependee__name', 'dependee__task')
     readonly_fields = ('change_dt',)
 
+    def get_deleted_objects(self, objs, request):
+        """Include related future dependencies"""
+
+        objs_plus_futures = set(objs)
+        for obj in objs:
+            if isinstance(obj, self.model) and not obj.future_depends:
+                if td := obj.__class__.objects.filter(
+                    depender=obj.dependee, dependee=obj.depender
+                ):
+                    objs_plus_futures.add(td[0])
+
+        return super().get_deleted_objects(list(objs_plus_futures), request)
+
 
 class UserActionAdmin(admin.ModelAdmin):
     """User-Action Admin"""

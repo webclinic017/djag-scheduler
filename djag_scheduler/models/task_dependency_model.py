@@ -132,9 +132,21 @@ class TaskDependency(models.Model):
         )
 
     @classmethod
+    def delete_related_dependencies(cls, instance, *args, **kwargs):
+        """Delete related future dependency for this instance"""
+        if not isinstance(instance, cls):
+            return
+
+        if not instance.future_depends:
+            if td := cls.objects.filter(
+                depender=instance.dependee, dependee=instance.depender
+            ):
+                td[0].delete()
+
+    @classmethod
     def insert_dependency_change(cls, instance, *args, **kwargs):
         """Insert Task Deleted record into UserAction"""
-        if not isinstance(instance, TaskDependency):
+        if not isinstance(instance, cls):
             return
 
         user_action = UserAction(
@@ -149,3 +161,4 @@ class TaskDependency(models.Model):
 
 signals.pre_save.connect(TaskDependency.insert_dependency_change, sender=TaskDependency)
 signals.pre_delete.connect(TaskDependency.insert_dependency_change, sender=TaskDependency)
+signals.pre_delete.connect(TaskDependency.delete_related_dependencies, sender=TaskDependency)
