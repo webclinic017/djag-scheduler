@@ -220,7 +220,7 @@ class PeriodicTask(models.Model):
         user_action = UserAction(
             action=action_choices.TASK_CHANGED,
             payload=dict(
-                task_id=instance.id,
+                task_id=instance.pk,
                 task_name=instance.name,
                 task=instance.task
             )
