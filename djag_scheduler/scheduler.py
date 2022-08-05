@@ -158,7 +158,7 @@ class DjagTaskEntry(ScheduleEntry):
             return cron, sec
 
         next_tick = -math.inf
-        for task_pk, future_depends, change_dt in DjagTaskDAG.get_dependency(self.id):
+        for task_pk, future_depends in DjagTaskDAG.get_dependencies(self.id):
             task_entry = self.scheduler.get_entry(task_pk)
 
             if future_depends:
@@ -263,18 +263,12 @@ class DjagTaskDAG:
         """Compute Task DAG"""
 
         # Group tasks based on depender
-        task_groups = defaultdict(set)
+        cls.__task_dag = defaultdict(set)
         for dependency in TaskDependency.objects.all():
-            task_groups[dependency.depender.pk].add((
+            cls.__task_dag[dependency.depender.pk].add((
                 dependency.dependee.id,
-                dependency.future_depends,
-                dependency.change_dt
+                dependency.future_depends
             ))
-
-        # Construct task DAG
-        cls.__task_dag = {}
-        for depender, info in task_groups.items():
-            cls.__task_dag[depender] = info
 
         # Add tasks that have no dependency
         for task in PeriodicTask.objects.all():
@@ -284,7 +278,7 @@ class DjagTaskDAG:
         return True
 
     @classmethod
-    def get_dependency(cls, task_pk):
+    def get_dependencies(cls, task_pk):
         """Get dependencies of task"""
         if cls.__task_dag or cls.compute_task_dag():
             return cls.__task_dag.get(task_pk)
