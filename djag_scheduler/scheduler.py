@@ -199,7 +199,9 @@ class DjagTaskEntry(ScheduleEntry):
 
         try:
             # Update specific fields to prevent reinsertion if model is deleted else-where
-            self.model.save(update_fields=fields)
+            self.model.save(
+                update_fields=fields, insert_task_change=False
+            )
         except ValueError:
             # Model is deleted
             return False, 'deleted'

@@ -172,38 +172,11 @@ class PeriodicTask(models.Model):
                 'grace_period': ValidationError('Grace period must be set for skipping or coalescing misfires')
             })
 
-    def save(self, *args, **kwargs):
+    def save(self, *args, insert_task_change=True, **kwargs):
         """Save model data"""
         self.full_clean()
 
-        if self.pk is None:
-            # Task is added for the first time
-            user_action = True
-        else:
-            update_fields = kwargs.get('update_fields')
-            scheduler_fields = {'last_cron', 'last_active_start',
-                                'last_active_end', 'running',
-                                'total_run_count'}
-            if update_fields and set(update_fields) <= scheduler_fields:
-                # If update_fields are subset of scheduler_fields
-                user_action = False
-            else:
-                cls = self.__class__
-                old = cls.objects.get(pk=self.pk)
-
-                # Check for changes (use update_fields if set)
-                user_action = False
-                for field in (update_fields or [field.name for field in cls._meta.get_fields()]):
-                    try:
-                        if (getattr(old, field) != getattr(self, field) and
-                                field not in scheduler_fields):
-                            # If non-scheduler field value changed
-                            user_action = True
-                            break
-                    except: # noqa
-                        pass
-
-        if user_action:
+        if insert_task_change:
             self.__class__.insert_task_change(self)
 
         super().save(*args, **kwargs)
