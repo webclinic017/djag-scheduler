@@ -40,10 +40,10 @@ class PeriodicTaskAdmin(admin.ModelAdmin):
     model = PeriodicTask
     inlines = (TaskDependeeInline, TaskDependerInline)
     date_hierarchy = 'date_changed'
-    list_display = ('task', 'name', 'crontab', 'enabled', 'running', 'last_cron',
-                    'last_cron_start', 'last_cron_end', 'total_run_count')
-    list_filter = ('enabled', 'running')
-    actions = ('enable_tasks', 'disable_tasks', 'toggle_tasks')
+    list_display = ('task', 'name', 'crontab', 'enabled', 'running',
+                    'last_cron', 'exception_cron', 'total_run_count')
+    list_filter = ('enabled', 'running', 'exception_cron')
+    actions = ('enable_tasks', 'disable_tasks', 'toggle_tasks', 'clear_exceptions')
     search_fields = ('name', 'task')
     fieldsets = (
         (None, {
@@ -53,7 +53,7 @@ class PeriodicTaskAdmin(admin.ModelAdmin):
         }),
         ('Schedule', {
             'fields': ('crontab', 'cron_base', 'running', 'last_cron', 'last_cron_start',
-                       'last_cron_end', 'total_run_count'),
+                       'last_cron_end', 'total_run_count', 'exception_cron'),
             'classes': ('extrapretty', 'wide'),
         }),
         ('Arguments', {
@@ -98,9 +98,14 @@ class PeriodicTaskAdmin(admin.ModelAdmin):
                 task.enabled = False
             elif mode == 'toggle':
                 task.enabled = not task.enabled
+            elif mode == 'clear':
+                task.exception_cron = None
 
             try:
-                task.save(update_fields=['enabled'])
+                if mode == 'clear':
+                    task.save(update_fields=['exception_cron'])
+                else:
+                    task.save(update_fields=['enabled'])
                 tasks_updated += 1
             except: # noqa
                 pass
@@ -127,6 +132,13 @@ class PeriodicTaskAdmin(admin.ModelAdmin):
         self._message_user_about_update(request, tasks_updated, 'toggled')
 
     toggle_tasks.short_description = 'Toggle activity of selected tasks'
+
+    def clear_exceptions(self, request, queryset):
+        """Clear exceptions for selected tasks"""
+        tasks_updated = PeriodicTaskAdmin._task_manager(queryset, 'clear')
+        self._message_user_about_update(request, tasks_updated, 'cleared')
+
+    clear_exceptions.short_description = 'Clear exceptions of selected tasks'
 
 
 class TaskDependencyAdmin(admin.ModelAdmin):

@@ -127,6 +127,12 @@ class PeriodicTask(models.Model):
         verbose_name='Running Instances',
         help_text='Total running instances of the task at the moment'
     )
+    exception_cron = models.DateTimeField(
+        auto_now=False, auto_now_add=False,
+        editable=True, blank=True, null=True,
+        verbose_name='Exception Cron',
+        help_text='The cron run which raised an exception'
+    )
 
     total_run_count = models.PositiveIntegerField(
         default=0, editable=False,
