@@ -124,7 +124,7 @@ class DjagTaskEntry(ScheduleEntry):
 
         try:
             cron_iter = croniter(self.crontab, DjagTaskEntry.set_timezone(last_cron, self.timezone))
-        except Exception:   # noqa
+        except Exception:  # noqa
             return None, SCHEDULE_CHECK_INTERVAL
 
         prev_result = None
@@ -204,7 +204,7 @@ class DjagTaskEntry(ScheduleEntry):
             )
         except ValueError:
             # Model is deleted
-            return False, 'deleted'
+            return True, 'deleted'
         except:  # noqa
             # Save error
             return False, 'unknown'
@@ -219,7 +219,7 @@ class DjagTaskEntry(ScheduleEntry):
         if not self.current_cron or (cron and cron > self.current_cron):
             self.current_cron = cron
 
-        self.save(fields=('running', 'last_cron_start'))
+        return self.save(fields=('running', 'last_cron_start'))
 
     def deactivate(self, cron):
         """The task djag-entry represents completed execution"""
@@ -230,8 +230,8 @@ class DjagTaskEntry(ScheduleEntry):
         if not self.last_cron or (cron and cron > self.last_cron):
             self.last_cron = cron
 
-        self.save(fields=('running', 'last_cron', 'last_cron_end',
-                          'total_run_count'))
+        return self.save(fields=('running', 'last_cron', 'last_cron_end',
+                                 'total_run_count'))
 
     def __reduce__(self):
         return self.__class__, (
@@ -297,6 +297,7 @@ class DjagScheduler(Scheduler):
         self._schedule = {}
         self._entry_dict = {}
         self._taskid_to_entry = {}
+        self._to_save = {}
 
         # Clear existing changes on init
         self._schedule_last_check = None
@@ -310,8 +311,26 @@ class DjagScheduler(Scheduler):
         """Setup default schedules"""
         pass  # Override parent's
 
+    def handle_entry_save(self, entry, saved, status):
+        """Handle DjagTaskEntry save"""
+        if status == 'deleted':
+            # If entry is deleted, remove it from to_save and entry_dict.
+            if entry.id in self._to_save:
+                del self._to_save[entry.id]
+
+            if entry.id in self._entry_dict:
+                del self._entry_dict[entry.id]
+        elif saved:
+            # If entry saved remove it from to_save dict
+            if entry.id in self._to_save:
+                del self._to_save[entry.id]
+        elif not saved:
+            # If entry not saved add to to_save dict
+            self._to_save[entry.id] = entry
+
     def schedule_changes(self):
         """Look for schedule changes"""
+
         def check_exceeded():
             return (self._schedule_last_check + timedelta(seconds=SCHEDULE_CHECK_INTERVAL) <
                     datetime.now(tz=pytz.utc))
@@ -356,7 +375,9 @@ class DjagScheduler(Scheduler):
                 raise exc
 
         self._taskid_to_entry[task_id] = entry.id, cron
-        entry.activate(cron)
+
+        saved, status = entry.activate(cron)
+        self.handle_entry_save(entry, saved, status)
 
         return result
 
@@ -394,15 +415,13 @@ class DjagScheduler(Scheduler):
 
     def sync(self):
         """
-        Sync (may be) un-synced entries to DB.
-        entry.activate/deactivate() continuously syncs changes
+        Sync un-synced entries to DB. entry.activate/deactivate() syncs changes
         this is to build resilience against tasks whose sync-failed
         """
-        for task_pk in list(self._entry_dict.keys()):
-            status, code = self._entry_dict[task_pk].save()
-            if code == 'deleted':
-                # model is deleted remove from entry_dict as well
-                del self._entry_dict[task_pk]
+        for entry_id in list(self._to_save.keys()):
+            entry = self._to_save[entry_id]
+            saved, status = entry.save()
+            self.handle_entry_save(entry, saved, status)
 
     @property
     def schedule(self):
@@ -442,7 +461,8 @@ class DjagScheduler(Scheduler):
             entry = self._entry_dict.get(entry_id)
 
             if entry:
-                entry.deactivate(cron)
+                saved, status = entry.deactivate(cron)
+                self.handle_entry_save(entry, saved, status)
 
             del self._taskid_to_entry[task_id]
 
