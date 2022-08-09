@@ -178,21 +178,41 @@ class PeriodicTask(models.Model):
                 'grace_period': ValidationError('Grace period must be set for skipping or coalescing misfires')
             })
 
-    def save(self, *args, insert_task_change=True, **kwargs):
+    def save(self, *args, insert_task_change=True, update_fields=None, **kwargs):
         """Save model data"""
         self.full_clean()
 
         if insert_task_change:
-            self.__class__.insert_task_change(self)
+            if self.pk is None:
+                # Task is added for the first time
+                self.__class__.insert_task_change(
+                    self, [field.name for field in self.__class__._meta.get_fields()]  # noqa
+                )
+            else:
+                old = self.__class__.objects.get(pk=self.pk)
+                fields = []
 
-        super().save(*args, **kwargs)
+                # Give preference to update_fields if set
+                for field in (update_fields or [
+                    field.name for field in self.__class__._meta.get_fields()  # noqa
+                ]):
+                    try:
+                        if getattr(self, field) != getattr(old, field):
+                            fields.append(field)
+                    except:  # noqa
+                        pass
+
+                if fields:
+                    self.__class__.insert_task_change(self, fields)
+
+        super().save(*args, update_fields=update_fields, **kwargs)
 
     def __str__(self):
         return self.task
 
     @classmethod
-    def insert_task_change(cls, instance, *args, **kwargs):
-        """Insert Task Deleted record into UserAction"""
+    def insert_task_change(cls, instance, fields=(), *args, **kwargs):
+        """Insert Task Change record"""
         if not isinstance(instance, PeriodicTask):
             return
 
@@ -201,10 +221,30 @@ class PeriodicTask(models.Model):
             payload=dict(
                 task_id=instance.pk,
                 task_name=instance.name,
-                task=instance.task
+                task=instance.task,
+                status='changed',
+                fields=fields
+            )
+        )
+        user_action.save()
+
+    @classmethod
+    def insert_task_delete(cls, instance, *args, **kwargs):
+        """Insert Task Change record"""
+        if not isinstance(instance, PeriodicTask):
+            return
+
+        user_action = UserAction(
+            action=action_choices.TASK_CHANGED,
+            payload=dict(
+                task_id=instance.pk,
+                task_name=instance.name,
+                task=instance.task,
+                status='deleted',
+                fields=()
             )
         )
         user_action.save()
 
 
-signals.post_delete.connect(PeriodicTask.insert_task_change, sender=PeriodicTask)
+signals.post_delete.connect(PeriodicTask.insert_task_delete, sender=PeriodicTask)
