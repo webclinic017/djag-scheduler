@@ -1,4 +1,6 @@
 """Crontab schedule model"""
+from zoneinfo import available_timezones
+
 from django.db import models
 from django.db.models import signals
 from django.conf import settings
@@ -20,11 +22,12 @@ def default_timezone():
         celery_timezone = getattr(
             settings, '{0}_TIMEZONE'.format(current_app.namespace)
         )
+        if celery_timezone in available_timezones():
+            return celery_timezone
+        else:
+            return 'UTC'
     except AttributeError:
         return 'UTC'
-    return celery_timezone if celery_timezone in [
-        choice[0].zone for choice in timezone_field.TimeZoneField.default_choices
-    ] else 'UTC'
 
 
 class CrontabSchedule(models.Model):
@@ -72,6 +75,7 @@ class CrontabSchedule(models.Model):
 
     timezone = timezone_field.TimeZoneField(
         default=default_timezone,
+        use_pytz=False,
         verbose_name='Cron Timezone',
         help_text='Timezone to Run the Cron Schedule on. Default is UTC.',
     )
