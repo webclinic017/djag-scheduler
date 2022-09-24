@@ -85,7 +85,7 @@ class TaskDependency(models.Model):
                 direct_deps.add((td.depender, td.dependee))
 
                 # Add only direct dependencies to task group
-                task_groups[td.depender.id].add(td.dependee.id)
+                task_groups[td.depender.pk].add(td.dependee.pk)
 
         # Validate dependency graph constraints
         orphans = future_deps - direct_deps
@@ -100,29 +100,30 @@ class TaskDependency(models.Model):
         except CircularDependencyError:
             raise ValidationError('Task-Dependency creates a cycle in DAG')
 
-    def save(self, *args, **kwargs):
+    def save(self, *args, update_fields=None, **kwargs):
         """Save model data"""
         self.full_clean()
 
         # Call super().save() only when there are real changes
-        if not self.pk:
+        if self.pk is None:
             # Object created for the first time
-            super().save(*args, **kwargs)
+            self.__class__.insert_dependency_change(self)
         else:
-            cls = self.__class__
-            old = cls.objects.get(pk=self.pk)
+            old = self.__class__.objects.get(pk=self.pk)
 
             # Check for changes (use update_fields if set)
-            for field in (kwargs.get('update_fields') or [field.name for field in cls._meta.get_fields()]):
+            for field in (update_fields or [
+                field.name for field in self.__class__._meta.get_fields()]  # noqa
+            ):
                 try:
                     if getattr(old, field) != getattr(self, field):
-                        try:
-                            super().save(*args, **kwargs)
-                        except Exception as exc:
-                            raise exc
+                        self.__class__.insert_dependency_change(self)
+
                         break
                 except:  # noqa
-                    raise ValueError('Failed to compare the field ' + field + ' between the current and old model')
+                    pass
+
+        super().save(*args, update_fields=update_fields, **kwargs)
 
     def __str__(self):
         return '{0} --{1} {2}'.format(
@@ -139,7 +140,7 @@ class TaskDependency(models.Model):
 
         if not instance.future_depends:
             if td := cls.objects.filter(
-                depender=instance.dependee, dependee=instance.depender
+                    depender=instance.dependee, dependee=instance.depender
             ):
                 td[0].delete()
 
@@ -152,13 +153,12 @@ class TaskDependency(models.Model):
         user_action = UserAction(
             action=action_choices.DEPENDENCY_CHANGED,
             payload=dict(
-                schedule_id=instance.id,
+                schedule_id=instance.pk,
                 schedule=str(instance)
             )
         )
         user_action.save()
 
 
-signals.pre_save.connect(TaskDependency.insert_dependency_change, sender=TaskDependency)
-signals.pre_delete.connect(TaskDependency.insert_dependency_change, sender=TaskDependency)
 signals.pre_delete.connect(TaskDependency.delete_related_dependencies, sender=TaskDependency)
+signals.post_delete.connect(TaskDependency.insert_dependency_change, sender=TaskDependency)
