@@ -93,13 +93,38 @@ class CrontabSchedule(models.Model):
         if not croniter.is_valid(self.crontab):
             raise ValidationError('CronIter: Crontab is not valid')
 
-    def save(self, *args, **kwargs):
+    def save(self, *args, update_fields=None, **kwargs):
         """Save model data"""
         self.full_clean()
-        super().save(*args, **kwargs)
+
+        if self.pk is None:
+            # Crontab schedule is added for the first time
+            self.__class__.insert_schedule_change(self)
+        else:
+            old = self.__class__.objects.get(pk=self.pk)
+
+            # Give preference to update_fields if set
+            for field in (update_fields or [
+                field.name for field in self.__class__._meta.get_fields()  # noqa
+            ]):
+                try:
+                    if getattr(self, field) != getattr(old, field):
+                        from .periodic_task_model import PeriodicTask
+
+                        self.__class__.insert_schedule_change(self)
+
+                        # Get periodic tasks which uses this cron
+                        for task in PeriodicTask.objects.filter(crontab__pk=self.pk):
+                            task.__class__.insert_task_change(task, ('crontab',))
+
+                        break
+                except:  # noqa
+                    pass
+
+        super().save(*args, update_fields=update_fields, **kwargs)
 
     def __str__(self):
-        return self.crontab + " " + str(self.timezone)
+        return self.crontab + ' ' + str(self.timezone)
 
     @property
     def crontab(self):
@@ -117,12 +142,11 @@ class CrontabSchedule(models.Model):
         user_action = UserAction(
             action=action_choices.SCHEDULE_CHANGED,
             payload=dict(
-                schedule_id=instance.id,
+                schedule_id=instance.pk,
                 schedule=str(instance)
             )
         )
         user_action.save()
 
 
-signals.post_save.connect(CrontabSchedule.insert_schedule_change, sender=CrontabSchedule)
 signals.post_delete.connect(CrontabSchedule.insert_schedule_change, sender=CrontabSchedule)
