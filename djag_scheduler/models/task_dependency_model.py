@@ -153,8 +153,8 @@ class TaskDependency(models.Model):
         user_action = UserAction(
             action=action_choices.DEPENDENCY_CHANGED,
             payload=dict(
-                schedule_id=instance.pk,
-                schedule=str(instance)
+                dependency_id=instance.pk,
+                dependency=str(instance)
             )
         )
         user_action.save()
