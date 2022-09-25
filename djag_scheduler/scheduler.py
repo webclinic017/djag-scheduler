@@ -1,26 +1,23 @@
 """Djag Scheduler Implementation."""
 
+import math
+import traceback
 import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta
-import math
-import traceback
-
-from django.conf import settings
-from django.db import transaction, close_old_connections  # noqa
-from django.core.cache import caches
-from django.core.cache.backends.base import InvalidCacheBackendError
-from django.utils.timezone import is_aware
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from celery import current_app
 from celery.beat import (
-    Scheduler, ScheduleEntry, _evaluate_entry_args, _evaluate_entry_kwargs  # noqa
+    Scheduler, ScheduleEntry
 )
 from celery.utils.log import get_logger
-from kombu.utils.encoding import safe_repr
 from croniter import croniter
-import pytz
-from pytz.exceptions import UnknownTimeZoneError
+from django.conf import settings
+from django.core.cache import caches
+from django.core.cache.backends.base import InvalidCacheBackendError
+from django.utils.timezone import is_aware
+from kombu.utils.encoding import safe_repr
 
 import djag_scheduler.models.user_action_model as action_choices
 from djag_scheduler.models import (
@@ -28,12 +25,14 @@ from djag_scheduler.models import (
     UserAction
 )
 
+utc_zone = ZoneInfo('UTC')
+
 try:
-    DEFAULT_TIMEZONE = pytz.timezone(
+    DEFAULT_TIMEZONE = ZoneInfo(
         getattr(settings, '{0}_TIMEZONE'.format(current_app.namespace))
     )
-except UnknownTimeZoneError:
-    DEFAULT_TIMEZONE = pytz.utc
+except ZoneInfoNotFoundError:
+    DEFAULT_TIMEZONE = utc_zone
 
 DEFAULT_INTERVAL = getattr(settings, 'DJAG_DEFAULT_INTERVAL', 60)
 SCHEDULE_CHECK_INTERVAL = getattr(settings, 'DJAG_SCHEDULE_CHECK_INTERVAL', 300)
@@ -57,7 +56,7 @@ class DjagTaskEntry(ScheduleEntry):
         # Initialize scheduler fields
         self.id = model.pk
         self.running = model.running
-        self.last_cron = DjagTaskEntry.set_timezone(model.last_cron, pytz.utc)
+        self.last_cron = DjagTaskEntry.set_timezone(model.last_cron, utc_zone)
         self.last_cron_start = model.last_cron_start
         self.last_cron_end = model.last_cron_end
         self.current_cron = self.last_cron
@@ -129,8 +128,8 @@ class DjagTaskEntry(ScheduleEntry):
 
         prev_result = None
         while True:
-            result = cron_iter.get_next(datetime).astimezone(tz=pytz.utc)
-            now = datetime.now(tz=pytz.utc).timestamp()
+            result = cron_iter.get_next(datetime).astimezone(tz=utc_zone)
+            now = datetime.now(tz=utc_zone).timestamp()
 
             interval = result.timestamp() - now
             if self.skip_misfire and -interval > self.grace_period:  # Skip misfires when grace_period is exceeded
@@ -214,7 +213,7 @@ class DjagTaskEntry(ScheduleEntry):
     def activate(self, cron):
         """The task djag-entry represents is in execution"""
         self.running += 1
-        self.last_cron_start = datetime.now(tz=pytz.utc)
+        self.last_cron_start = datetime.now(tz=utc_zone)
 
         if not self.current_cron or (cron and cron > self.current_cron):
             self.current_cron = cron
@@ -224,7 +223,7 @@ class DjagTaskEntry(ScheduleEntry):
     def deactivate(self, cron):
         """The task djag-entry represents completed execution"""
         self.running -= 1
-        self.last_cron_end = datetime.now(tz=pytz.utc)
+        self.last_cron_end = datetime.now(tz=utc_zone)
         self.total_run_count += 1
 
         if not self.last_cron or (cron and cron > self.last_cron):
@@ -333,12 +332,12 @@ class DjagScheduler(Scheduler):
 
         def check_exceeded():
             return (self._schedule_last_check + timedelta(seconds=SCHEDULE_CHECK_INTERVAL) <
-                    datetime.now(tz=pytz.utc))
+                    datetime.now(tz=utc_zone))
 
         if self._schedule_last_check and not check_exceeded():
             return False
 
-        self._schedule_last_check = datetime.now(tz=pytz.utc)
+        self._schedule_last_check = datetime.now(tz=utc_zone)
 
         try:
             changes = self.Changes.objects.filter(action__in=[
