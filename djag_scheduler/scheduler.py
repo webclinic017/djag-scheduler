@@ -47,11 +47,10 @@ class DjagTaskEntry(ScheduleEntry):
 
     def __init__(self, scheduler, model, app=None):  # noqa
         """Initialize the djag-task entry."""
-        self.app = app or current_app._get_current_object()  # noqa
         self.scheduler = scheduler
+        self.model = model
+        self.app = app or current_app._get_current_object()  # noqa
         self.finalized = True
-
-        DjagTaskEntry.clean_model(model)
 
         # Initialize scheduler fields
         self.id = model.pk
@@ -63,22 +62,6 @@ class DjagTaskEntry(ScheduleEntry):
         self.total_run_count = model.total_run_count
 
         self.update_entry(model)
-
-    @classmethod
-    def clean_model(cls, model):
-        """Clean model in-case of abrupt terminations"""
-        fresh_run = not (model.last_cron_start or model.last_cron_end)
-        dirty_first_run = model.last_cron_start and not model.last_cron_end
-
-        def unfinished(): return model.running != 0 or model.last_cron_start > model.last_cron_end
-
-        if not fresh_run and (dirty_first_run or unfinished()):
-            model.running = 0
-            model.last_cron_start = model.last_cron_end
-
-            return False
-
-        return True
 
     @classmethod
     def set_timezone(cls, dt, timezone):
@@ -306,6 +289,23 @@ class DjagScheduler(Scheduler):
         self.sync_every = RESILIENT_SYNC_INTERVAL
         self.max_interval = DEFAULT_INTERVAL
 
+    @classmethod
+    def clean_model(cls, model):
+        """Clean model in-case of abrupt terminations"""
+        not_first_run = model.last_cron_start or model.last_cron_end
+        dirty_first_run = model.last_cron_start and not model.last_cron_end
+
+        if not_first_run and (
+                dirty_first_run or model.running or
+                model.last_cron_start > model.last_cron_end
+        ):
+            model.running = 0
+            model.last_cron_start = model.last_cron_end
+
+            return False
+
+        return True
+
     def setup_schedule(self):
         """Setup default schedules"""
         pass  # Override parent's
@@ -433,6 +433,7 @@ class DjagScheduler(Scheduler):
                 if model.pk in self._entry_dict:
                     self._entry_dict[model.pk].update_entry(model)
                 else:
+                    self.__class__.clean_model(model)  # Clean model when it is loaded for the first time
                     self._entry_dict[model.pk] = self.Entry(self, model, app=self.app)
 
                 self._schedule[model.pk] = self._entry_dict[model.pk]
