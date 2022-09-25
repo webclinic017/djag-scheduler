@@ -113,8 +113,8 @@ class TaskDependency(models.Model):
 
             # Check for changes (use update_fields if set)
             for field in (update_fields or [
-                field.name for field in self.__class__._meta.get_fields()]  # noqa
-            ):
+                f.name for f in self.__class__._meta.get_fields() if isinstance(f, models.Field)  # noqa
+            ]):
                 try:
                     if getattr(old, field) != getattr(self, field):
                         self.__class__.insert_dependency_change(self)

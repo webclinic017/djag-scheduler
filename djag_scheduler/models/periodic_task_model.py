@@ -186,7 +186,9 @@ class PeriodicTask(models.Model):
             if self.pk is None:
                 # Task is added for the first time
                 self.__class__.insert_task_change(
-                    self, [field.name for field in self.__class__._meta.get_fields()]  # noqa
+                    self, [
+                        f.name for f in self.__class__._meta.get_fields() if isinstance(f, models.Field)  # noqa
+                    ]
                 )
             else:
                 old = self.__class__.objects.get(pk=self.pk)
@@ -194,7 +196,7 @@ class PeriodicTask(models.Model):
 
                 # Give preference to update_fields if set
                 for field in (update_fields or [
-                    field.name for field in self.__class__._meta.get_fields()  # noqa
+                    f.name for f in self.__class__._meta.get_fields() if isinstance(f, models.Field)  # noqa
                 ]):
                     try:
                         if getattr(self, field) != getattr(old, field):

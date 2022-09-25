@@ -105,7 +105,7 @@ class CrontabSchedule(models.Model):
 
             # Give preference to update_fields if set
             for field in (update_fields or [
-                field.name for field in self.__class__._meta.get_fields()  # noqa
+                f.name for f in self.__class__._meta.get_fields() if isinstance(f, models.Field)  # noqa
             ]):
                 try:
                     if getattr(self, field) != getattr(old, field):
@@ -128,7 +128,7 @@ class CrontabSchedule(models.Model):
 
     @property
     def crontab(self):
-        return ' '.join([
+        return ' '.join([  # noqa
             self.minute, self.hour, self.day_of_month,
             self.month_of_year, self.day_of_week
         ])
