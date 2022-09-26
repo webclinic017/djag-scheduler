@@ -50,18 +50,49 @@ class DjagTaskEntry(ScheduleEntry):
         self.scheduler = scheduler
         self.model = model
         self.app = app or current_app._get_current_object()  # noqa
-        self.finalized = True
 
         # Initialize scheduler fields
-        self.id = model.pk
-        self.running = model.running
-        self.last_cron = DjagTaskEntry.set_timezone(model.last_cron, utc_zone)
-        self.last_cron_start = model.last_cron_start
-        self.last_cron_end = model.last_cron_end
-        self.current_cron = self.last_cron
-        self.total_run_count = model.total_run_count
+        try:
+            self.id = model.id
+            self.name = model.name
+            self.task = model.task
+            self.crontab = model.crontab.crontab
+            self.timezone = model.crontab.timezone
+            self.cron_base = model.cron_base
+            self.args = model.args
+            self.kwargs = model.kwargs
+            self.queue = model.queue
+            self.exchange = model.exchange
+            self.routing_key = model.routing_key
+            self.headers = model.headers
+            self.priority = model.priority
+            self.enabled = model.enabled
+            self.skip_misfire = model.skip_misfire
+            self.coalesce_misfire = model.coalesce_misfire
+            self.grace_period = model.grace_period
+            self.last_cron = DjagTaskEntry.set_timezone(model.last_cron, utc_zone)
+            self.last_cron_start = model.last_cron_start
+            self.last_cron_end = model.last_cron_end
+            self.running = model.running
+            self.exception_cron = model.exception_cron
+            self.total_run_count = model.total_run_count
+            self.date_changed = model.date_chanegd
+            self.description = model.description
 
-        self.update_entry(model)
+            self.finalized = True
+        except: # noqa
+            self.finalized = False
+
+    @property
+    def options(self):
+        """Build options field"""
+        options = {'headers': self.headers or {}}
+        for option in ('queue', 'exchange', 'routing_key', 'priority'):
+            value = getattr(self, option)
+            if value is not None:
+                options[option] = value
+
+        return options
 
     @classmethod
     def set_timezone(cls, dt, timezone):
@@ -74,30 +105,20 @@ class DjagTaskEntry(ScheduleEntry):
         else:
             dt.replace(tzinfo=timezone)
 
-    def update_entry(self, model):
-        """Update non-scheduler fields from the new model"""
-
-        self.model = model  # noqa
-        self.name = model.name
-        self.task = model.task
-        self.cron_base = model.cron_base  # noqa
-        self.skip_misfire = model.skip_misfire  # noqa
-        self.coalesce_misfire = model.coalesce_misfire  # noqa
-        self.grace_period = model.grace_period  # noqa
-        self.args = model.args or []
-        self.kwargs = model.kwargs or {}
-        self.options = {'headers': model.headers or {}}
-
-        for option in ['queue', 'exchange', 'routing_key', 'priority']:
-            value = getattr(model, option)
-            if value is None:
-                continue
-            self.options[option] = value
+    def update_entry(self, model, fields):
+        """Update the modified fields from the model"""
+        self.model = model
 
         try:
-            self.crontab = model.crontab.crontab  # noqa
-            self.timezone = model.crontab.timezone  # noqa
-        except model.DoesNotExist:
+            for field in fields:
+                if field == 'crontab':
+                    self.crontab = model.crontab.crontab
+                    self.timezone = model.crontab.timezone
+                elif field == 'last_cron':
+                    self.last_cron = DjagTaskEntry.set_timezone(model.last_cron, utc_zone)
+                else:
+                    setattr(self, field, getattr(model, field))
+        except: # noqa
             self.finalized = False
 
     def next_cron(self, last_cron=None):
