@@ -161,8 +161,8 @@ class DjagTaskEntry(ScheduleEntry):
             return cron, sec
 
         next_tick = -math.inf
-        for task_pk, future_depends in DjagTaskDAG.get_dependencies(self.id):
-            task_entry = self.scheduler.get_entry(task_pk)
+        for task_id, future_depends in DjagTaskDAG.get_dependencies(self.id):
+            task_entry = self.scheduler.get_entry(task_id)
 
             if future_depends:
                 if task_entry.running:
@@ -245,7 +245,7 @@ class DjagTaskEntry(ScheduleEntry):
         )
 
     def __repr__(self):
-        return '<DjagTaskEntry: task_pk-{0} {1} {2}(*{3}, **{4}) {5} {6}>'.format(
+        return '<DjagTaskEntry: task_id-{0} {1} {2}(*{3}, **{4}) {5} {6}>'.format(
             self.id, self.name, self.task, safe_repr(self.args),
             safe_repr(self.kwargs), self.crontab, str(self.timezone)
         )
@@ -269,7 +269,7 @@ class DjagTaskDAG:
         cls.__task_dag = defaultdict(set)
         for dependency in TaskDependency.objects.all():
             cls.__task_dag[dependency.depender.pk].add((
-                dependency.dependee.id,
+                dependency.dependee.pk,
                 dependency.future_depends
             ))
 
@@ -281,10 +281,10 @@ class DjagTaskDAG:
         return True
 
     @classmethod
-    def get_dependencies(cls, task_pk):
+    def get_dependencies(cls, task_id):
         """Get dependencies of task"""
         if cls.__task_dag or cls.compute_task_dag():
-            return cls.__task_dag.get(task_pk)
+            return cls.__task_dag.get(task_id)
 
 
 class DjagScheduler(Scheduler):
@@ -489,10 +489,10 @@ class DjagScheduler(Scheduler):
 
         task_cache.delete_many(task_ids)
 
-    def get_entry(self, task_pk):
-        """Given task_pk get entry"""
-        return self._entry_dict.get(task_pk)
+    def get_entry(self, task_id):
+        """Given task_id get entry"""
+        return self._entry_dict.get(task_id)
 
-    def is_disabled(self, task_pk):
+    def is_disabled(self, task_id):
         """Return True if a task is disabled"""
-        return task_pk not in self.schedule
+        return task_id not in self.schedule
