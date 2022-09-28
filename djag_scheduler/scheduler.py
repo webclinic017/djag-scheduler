@@ -306,8 +306,6 @@ class DjagScheduler(Scheduler):
 
         # Clear existing changes on init
         self._schedule_last_check = None
-        self.schedule_changes()
-        self._update_schedule = True
 
         self.sync_every = RESILIENT_SYNC_INTERVAL
         self.max_interval = DEFAULT_INTERVAL
@@ -353,34 +351,6 @@ class DjagScheduler(Scheduler):
             # If entry not saved add to to_save dict
             self._to_save[entry.id] = entry
 
-    def schedule_changes(self):
-        """Look for schedule changes"""
-
-        def check_exceeded():
-            return (self._schedule_last_check + timedelta(seconds=SCHEDULE_CHECK_INTERVAL) <
-                    datetime.now(tz=utc_zone))
-
-        if self._schedule_last_check and not check_exceeded():
-            return False
-
-        self._schedule_last_check = datetime.now(tz=utc_zone)
-
-        try:
-            changes = self.Changes.objects.filter(action__in=[
-                action_choices.TASK_CHANGED,
-                action_choices.DEPENDENCY_CHANGED,
-                action_choices.SCHEDULE_CHANGED
-            ])
-
-            if changes:
-                changes.delete()
-                self._update_schedule = True
-                return True
-        except:  # noqa
-            pass
-
-        return False
-
     def apply_async(self, entry, producer=None, advance=True, **kwargs):
         """Override apply_sync to include custom task_id and to activate entry"""
         run_id = str(uuid.uuid4())
@@ -418,11 +388,8 @@ class DjagScheduler(Scheduler):
     def tick(self, *args, **kwargs):
         """Scheduler main entry point"""
 
-        # Finish off executions
+        # Culminate runs
         self.culminate_tasks()
-
-        # Check schedule changes
-        self.schedule_changes()
 
         next_tick = math.inf
         for entry in self.schedule.values():
@@ -451,21 +418,60 @@ class DjagScheduler(Scheduler):
     @property
     def schedule(self):
         """Return schedule"""
-        if self._update_schedule:
-            self._update_schedule = False
+        now = datetime.now(tz=utc_zone)
+        if self._schedule_last_check and (
+                self._schedule_last_check + timedelta(seconds=SCHEDULE_CHECK_INTERVAL) <= now
+        ):
+            self._schedule_last_check = now
+            try:
+                # One TASK_CHANGED added per SCHEDULE_CHANGED per task. Reading SCHEDULE_CHANGED to delete.
+                changes = self.Changes.objects.filter(action__in=[
+                    action_choices.TASK_CHANGED,
+                    action_choices.DEPENDENCY_CHANGED,
+                    action_choices.SCHEDULE_CHANGED
+                ])
 
-            self._schedule = {}
-            for model in self.Model.objects.enabled():
-                if model.pk in self._entry_dict:
-                    self._entry_dict[model.pk].update_entry(model)
-                else:
-                    self.__class__.clean_model(model)  # Clean model when it is loaded for the first time
-                    self._entry_dict[model.pk] = self.Entry(self, model, app=self.app)
+                update_schedule = False
+                update_task_dag = False
+                task_updates = {}
+                for change in changes:
+                    if change.action == action_choices.TASK_CHANGED:
+                        update_schedule = True
 
-                self._schedule[model.pk] = self._entry_dict[model.pk]
+                        payload = change.payload
+                        if payload['status'] == 'deleted':
+                            self.delete_entry(payload['task_id'])
+                        elif task_id := payload['task_id']:
+                            if task_id not in task_updates:
+                                task_updates[task_id] = set()
 
-            # Recompute task DAG
-            DjagTaskDAG.compute_task_dag()
+                            task_updates[task_id].update(payload['fields'])
+                    elif change.action == action_choices.DEPENDENCY_CHANGED:
+                        update_task_dag = True
+
+                # Delete already read changes
+                changes.delete()
+
+                # Construct schedule dict
+                if update_schedule:
+                    self._schedule = {}
+
+                    for model in self.Model.objects.enabled():
+                        if model.pk not in self._entry_dict:
+                            self.__class__.clean_model(model)  # Clean model when it is loaded for the first time
+                            self._entry_dict[model.pk] = self.Entry(self, model, app=self.app)
+                        elif model.pk in task_updates:
+                            self._entry_dict[model.pk].update_entry(
+                                model, task_updates[model.pk]
+                            )  # Update the modified fields in the task-entry
+
+                        self._schedule[model.pk] = self._entry_dict[model.pk]
+
+                # Dependencies changed! Update dependency DAG.
+                if update_task_dag:
+                    DjagTaskDAG.compute_task_dag()
+            except:  # noqa
+                pass
 
         return self._schedule
 
