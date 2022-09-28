@@ -79,8 +79,10 @@ class DjagTaskEntry(ScheduleEntry):
             self.date_changed = model.date_chanegd
             self.description = model.description
 
+            self.current_cron = self.last_cron
+
             self.finalized = True
-        except: # noqa
+        except:  # noqa
             self.finalized = False
 
     @property
@@ -120,7 +122,7 @@ class DjagTaskEntry(ScheduleEntry):
                     setattr(self, field, getattr(model, field))
 
             self.finalized = True
-        except: # noqa
+        except:  # noqa
             self.finalized = False
 
     def next_cron(self, last_cron=None):
