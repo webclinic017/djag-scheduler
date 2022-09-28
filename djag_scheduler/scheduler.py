@@ -118,6 +118,8 @@ class DjagTaskEntry(ScheduleEntry):
                     self.last_cron = DjagTaskEntry.set_timezone(model.last_cron, utc_zone)
                 else:
                     setattr(self, field, getattr(model, field))
+
+            self.finalized = True
         except: # noqa
             self.finalized = False
 
