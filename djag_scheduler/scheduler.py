@@ -421,7 +421,7 @@ class DjagScheduler(Scheduler):
     def schedule(self):
         """Return schedule"""
         now = datetime.now(tz=utc_zone)
-        if self._schedule_last_check and (
+        if not self._schedule_last_check or (
                 self._schedule_last_check + timedelta(seconds=SCHEDULE_CHECK_INTERVAL) <= now
         ):
             self._schedule_last_check = now
