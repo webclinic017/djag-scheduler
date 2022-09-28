@@ -76,7 +76,7 @@ class DjagTaskEntry(ScheduleEntry):
             self.running = model.running
             self.exception_cron = model.exception_cron
             self.total_run_count = model.total_run_count
-            self.date_changed = model.date_chanegd
+            self.date_changed = model.date_changed
             self.description = model.description
 
             self.current_cron = self.last_cron
