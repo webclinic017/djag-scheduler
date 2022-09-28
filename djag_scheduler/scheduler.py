@@ -333,15 +333,18 @@ class DjagScheduler(Scheduler):
         """Setup default schedules"""
         pass  # Override parent's
 
+    def delete_entry(self, task_id):
+        """Delete entry from the to_save, entry_dict"""
+        if task_id in self._to_save:
+            del self._to_save[task_id]
+
+        if task_id in self._entry_dict:
+            del self._entry_dict[task_id]
+
     def handle_entry_save(self, entry, saved, status):
         """Handle DjagTaskEntry save"""
         if status == 'deleted':
-            # If entry is deleted, remove it from to_save and entry_dict.
-            if entry.id in self._to_save:
-                del self._to_save[entry.id]
-
-            if entry.id in self._entry_dict:
-                del self._entry_dict[entry.id]
+            self.delete_entry(entry.id)
         elif saved:
             # If entry saved remove it from to_save dict
             if entry.id in self._to_save:
