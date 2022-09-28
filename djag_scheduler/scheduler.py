@@ -304,6 +304,10 @@ class DjagScheduler(Scheduler):
         self._run_id_to_entry = {}
         self._to_save = {}
 
+        # For init-ing the schedule and task-dag for the first time
+        self._update_schedule = True
+        self._update_task_dag = True
+
         # Clear existing changes on init
         self._schedule_last_check = None
 
@@ -429,12 +433,10 @@ class DjagScheduler(Scheduler):
                     action_choices.SCHEDULE_CHANGED
                 ])
 
-                update_schedule = False
-                update_task_dag = False
                 task_updates = {}
                 for change in changes:
                     if change.action == action_choices.TASK_CHANGED:
-                        update_schedule = True
+                        self._update_schedule = True
 
                         payload = change.payload
                         if payload['status'] == 'deleted':
@@ -445,13 +447,14 @@ class DjagScheduler(Scheduler):
 
                             task_updates[task_id].update(payload['fields'])
                     elif change.action == action_choices.DEPENDENCY_CHANGED:
-                        update_task_dag = True
+                        self._update_task_dag = True
 
                 # Delete already read changes
                 changes.delete()
 
                 # Construct schedule dict
-                if update_schedule:
+                if self._update_schedule:
+                    self._update_schedule = False
                     self._schedule = {}
 
                     for model in self.Model.objects.enabled():
@@ -466,7 +469,8 @@ class DjagScheduler(Scheduler):
                         self._schedule[model.pk] = self._entry_dict[model.pk]
 
                 # Dependencies changed! Update dependency DAG.
-                if update_task_dag:
+                if self._update_task_dag:
+                    self._update_task_dag = False
                     DjagTaskDAG.compute_task_dag()
             except:  # noqa
                 pass
