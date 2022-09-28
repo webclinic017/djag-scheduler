@@ -301,7 +301,7 @@ class DjagScheduler(Scheduler):
 
         self._schedule = {}
         self._entry_dict = {}
-        self._taskid_to_entry = {}
+        self._run_id_to_entry = {}
         self._to_save = {}
 
         # Clear existing changes on init
@@ -380,12 +380,12 @@ class DjagScheduler(Scheduler):
 
     def apply_async(self, entry, producer=None, advance=True, **kwargs):
         """Override apply_sync to include custom task_id and to activate entry"""
-        task_id = str(uuid.uuid4())
+        run_id = str(uuid.uuid4())
         cron = kwargs.pop('cron', None)
 
         # Try passing djag_run_dt and on TypeError pass with out it.
         entry.kwargs['djag_run_dt'] = cron
-        entry.options.update({'task_id': task_id})
+        entry.options.update({'run_id': run_id})
 
         try:
             result = super().apply_async(entry, producer, advance, **kwargs)
@@ -396,7 +396,7 @@ class DjagScheduler(Scheduler):
             else:
                 raise exc
 
-        self._taskid_to_entry[task_id] = entry.id, cron
+        self._run_id_to_entry[run_id] = entry.id, cron
 
         saved, status = entry.activate(cron)
         self.handle_entry_save(entry, saved, status)
@@ -469,27 +469,27 @@ class DjagScheduler(Scheduler):
     def culminate_tasks(self):
         """Invoke deactivation on the entries"""
         try:
-            task_cache = caches['djag_scheduler']
+            djag_cache = caches['djag_scheduler']
         except InvalidCacheBackendError:
             return
 
-        task_status = task_cache.get_many(list(self._taskid_to_entry.keys()))
-        task_ids = list(task_status.keys())
+        run_status = djag_cache.get_many(list(self._run_id_to_entry.keys()))
+        run_ids = list(run_status.keys())
 
-        if not task_ids:
+        if not run_ids:
             return
 
-        for task_id in task_ids:
-            entry_id, cron = self._taskid_to_entry[task_id]
+        for run_id in run_ids:
+            entry_id, cron = self._run_id_to_entry[run_id]
             entry = self._entry_dict.get(entry_id)
 
             if entry:
                 saved, status = entry.deactivate(cron)
                 self.handle_entry_save(entry, saved, status)
 
-            del self._taskid_to_entry[task_id]
+            del self._run_id_to_entry[run_id]
 
-        task_cache.delete_many(task_ids)
+        djag_cache.delete_many(run_ids)
 
     def get_entry(self, task_id):
         """Given task_id get entry"""
