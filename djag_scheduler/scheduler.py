@@ -370,9 +370,7 @@ class DjagScheduler(Scheduler):
                 raise exc
 
         self._run_id_to_entry[run_id] = entry.id, cron
-
-        saved, status = entry.activate(cron)
-        self.handle_entry_save(entry, saved, status)
+        self.handle_entry_save(entry, **entry.activate(cron))
 
         return result
 
@@ -493,8 +491,7 @@ class DjagScheduler(Scheduler):
             entry = self._entry_dict.get(entry_id)
 
             if entry:
-                saved, status = entry.deactivate(cron)
-                self.handle_entry_save(entry, saved, status)
+                self.handle_entry_save(entry, **entry.deactivate(cron))
 
             del self._run_id_to_entry[run_id]
 
