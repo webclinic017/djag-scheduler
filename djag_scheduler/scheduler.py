@@ -154,7 +154,7 @@ class DjagTaskEntry(ScheduleEntry):
 
     def is_due(self):
         """Determine the task's due status"""
-        if not self.finalized:
+        if not self.finalized or self.exception_cron:
             return None, SCHEDULE_CHECK_INTERVAL
 
         cron, sec = self.next_cron()
@@ -196,8 +196,8 @@ class DjagTaskEntry(ScheduleEntry):
 
         return cron, max(next_tick, sec)
 
-    def save(self, fields=('running', 'last_cron', 'last_cron_start',
-                           'last_cron_end', 'total_run_count')):
+    def save(self, fields=('running', 'last_cron', 'last_cron_start', 'last_cron_end',
+                           'exception_cron', 'total_run_count')):
         """Save model state to the DB"""
         for field in fields:
             value = getattr(self, field)
@@ -226,6 +226,13 @@ class DjagTaskEntry(ScheduleEntry):
             self.current_cron = cron
 
         return self.save(fields=('running', 'last_cron_start'))
+
+    def handle_exception(self, cron):
+        """The task djag-entry represents resulted in a exception"""
+        if not self.exception_cron or (cron and cron > self.exception_cron):
+            self.exception_cron = cron
+
+        return self.save(fields=('exception_cron',))
 
     def deactivate(self, cron):
         """The task djag-entry represents completed execution"""
@@ -366,13 +373,19 @@ class DjagScheduler(Scheduler):
         entry.options.update({'task_id': run_id})
 
         try:
-            result = super().apply_async(entry, producer, advance, **kwargs)
-        except Exception as exc:
-            if isinstance(exc.__context__, TypeError):
-                entry.kwargs.pop('djag_run_dt')
+            try:
                 result = super().apply_async(entry, producer, advance, **kwargs)
-            else:
-                raise exc
+            except Exception as exc:
+                if isinstance(exc.__context__, TypeError):
+                    entry.kwargs.pop('djag_run_dt')
+                    result = super().apply_async(entry, producer, advance, **kwargs)
+                else:
+                    raise exc
+        except Exception as exc:  # noqa
+            # Notify DjagTaskEntry of exception
+            self.handle_entry_save(entry, *entry.handle_exception(cron))
+
+            raise exc
 
         self._run_id_to_entry[run_id] = entry.id, cron
         self.handle_entry_save(entry, *entry.activate(cron))
