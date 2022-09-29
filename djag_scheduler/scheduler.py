@@ -45,6 +45,8 @@ logger = get_logger(__name__)
 class DjagTaskEntry(ScheduleEntry):
     """Djag task entry for each periodic task"""
 
+    OPTIONS_KEYS = ('headers', 'queue', 'exchange', 'routing_key', 'priority')
+
     def __init__(self, scheduler, model, app=None):  # noqa
         """Initialize the djag-task entry."""
         self.scheduler = scheduler
@@ -61,11 +63,13 @@ class DjagTaskEntry(ScheduleEntry):
             self.cron_base = model.cron_base
             self.args = model.args
             self.kwargs = model.kwargs
-            self.queue = model.queue
-            self.exchange = model.exchange
-            self.routing_key = model.routing_key
-            self.headers = model.headers
-            self.priority = model.priority
+
+            self.options = {}
+            for option in self.__class__.OPTIONS_KEYS:
+                value = getattr(model, option, None)
+                if value is not None:
+                    self.options[option] = value
+
             self.enabled = model.enabled
             self.skip_misfire = model.skip_misfire
             self.coalesce_misfire = model.coalesce_misfire
@@ -84,17 +88,6 @@ class DjagTaskEntry(ScheduleEntry):
             self.finalized = True
         except:  # noqa
             self.finalized = False
-
-    @property
-    def options(self):
-        """Build options field"""
-        options = {'headers': self.headers or {}}
-        for option in ('queue', 'exchange', 'routing_key', 'priority'):
-            value = getattr(self, option)
-            if value is not None:
-                options[option] = value
-
-        return options
 
     @classmethod
     def set_timezone(cls, dt, timezone):
@@ -118,6 +111,12 @@ class DjagTaskEntry(ScheduleEntry):
                     self.timezone = model.crontab.timezone
                 elif field == 'last_cron':
                     self.last_cron = DjagTaskEntry.set_timezone(model.last_cron, utc_zone)
+                elif field in self.__class__.OPTIONS_KEYS:
+                    value = getattr(model, field, None)
+                    if value is not None:
+                        self.options[field] = value
+                    elif field in self.options:
+                        del self.options[field]
                 else:
                     setattr(self, field, getattr(model, field))
 

@@ -10,4 +10,3 @@ class DjagSchedulerConfig(AppConfig):
     label = 'djag_scheduler'
     verbose_name = 'Djag Scheduler'
     default_auto_field = 'django.db.models.AutoField'
-
