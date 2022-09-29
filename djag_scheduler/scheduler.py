@@ -363,7 +363,7 @@ class DjagScheduler(Scheduler):
 
         # Try passing djag_run_dt and on TypeError pass with out it.
         entry.kwargs['djag_run_dt'] = cron
-        entry.options.update({'run_id': run_id})
+        entry.options.update({'task_id': run_id})
 
         try:
             result = super().apply_async(entry, producer, advance, **kwargs)
