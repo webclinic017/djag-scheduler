@@ -375,7 +375,7 @@ class DjagScheduler(Scheduler):
                 raise exc
 
         self._run_id_to_entry[run_id] = entry.id, cron
-        self.handle_entry_save(entry, **entry.activate(cron))
+        self.handle_entry_save(entry, *entry.activate(cron))
 
         return result
 
@@ -415,8 +415,7 @@ class DjagScheduler(Scheduler):
         """
         for entry_id in list(self._to_save.keys()):
             entry = self._to_save[entry_id]
-            saved, status = entry.save()
-            self.handle_entry_save(entry, saved, status)
+            self.handle_entry_save(entry, *entry.save())
 
     @property
     def schedule(self):
@@ -496,7 +495,7 @@ class DjagScheduler(Scheduler):
             entry = self._entry_dict.get(entry_id)
 
             if entry:
-                self.handle_entry_save(entry, **entry.deactivate(cron))
+                self.handle_entry_save(entry, *entry.deactivate(cron))
 
             del self._run_id_to_entry[run_id]
 
