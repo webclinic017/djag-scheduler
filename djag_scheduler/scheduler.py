@@ -62,7 +62,7 @@ class DjagTaskEntry(ScheduleEntry):
             self.timezone = model.crontab.timezone
             self.cron_base = model.cron_base
             self.args = model.args
-            self.kwargs = model.kwargs
+            self.kwargs = dict(model.kwargs)
 
             self.options = {}
             for option in self.__class__.OPTIONS_KEYS:
@@ -111,6 +111,8 @@ class DjagTaskEntry(ScheduleEntry):
                     self.timezone = model.crontab.timezone
                 elif field == 'last_cron':
                     self.last_cron = DjagTaskEntry.set_timezone(model.last_cron, utc_zone)
+                elif field == 'kwargs':
+                    self.kwargs = dict(model.kwargs)
                 elif field in self.__class__.OPTIONS_KEYS:
                     value = getattr(model, field, None)
                     if value is not None:
@@ -130,7 +132,7 @@ class DjagTaskEntry(ScheduleEntry):
 
         try:
             cron_iter = croniter(self.crontab, DjagTaskEntry.set_timezone(last_cron, self.timezone))
-        except Exception:  # noqa
+        except:  # noqa
             return None, SCHEDULE_CHECK_INTERVAL
 
         prev_result = None
