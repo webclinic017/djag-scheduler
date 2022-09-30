@@ -231,7 +231,7 @@ class DjagTaskEntry(ScheduleEntry):
 
     def handle_exception(self, cron):
         """The task djag-entry represents resulted in a exception"""
-        if not self.exception_cron or (cron and cron > self.exception_cron):
+        if not self.exception_cron or (cron and cron < self.exception_cron):
             self.exception_cron = cron
 
         return self.save(fields=('exception_cron',))
