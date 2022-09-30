@@ -508,7 +508,10 @@ class DjagScheduler(Scheduler):
             entry = self._entry_dict.get(entry_id)
 
             if entry:
-                self.handle_entry_save(entry, *entry.deactivate(cron))
+                if run_status[run_id] == 'SUCCESS':
+                    self.handle_entry_save(entry, *entry.deactivate(cron))
+                else:
+                    self.handle_entry_save(entry, *entry.handle_exception(cron))
 
             del self._run_id_to_entry[run_id]
 
