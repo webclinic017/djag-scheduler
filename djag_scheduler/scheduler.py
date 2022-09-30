@@ -234,6 +234,9 @@ class DjagTaskEntry(ScheduleEntry):
         if not self.exception_cron or (cron and cron < self.exception_cron):
             self.exception_cron = cron
 
+            # Update current_cron to last_cron to reschedule self.exception_cron (when cleared)
+            self.current_cron = self.last_cron
+
         return self.save(fields=('exception_cron',))
 
     def deactivate(self, cron):
