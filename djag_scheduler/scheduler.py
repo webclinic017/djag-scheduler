@@ -74,7 +74,7 @@ class DjagTaskEntry(ScheduleEntry):
             self.skip_misfire = model.skip_misfire
             self.coalesce_misfire = model.coalesce_misfire
             self.grace_period = model.grace_period
-            self.last_cron = DjagTaskEntry.set_timezone(model.last_cron, utc_zone)
+            self.last_cron = self.__class__.set_timezone(model.last_cron, utc_zone)
             self.last_cron_start = model.last_cron_start
             self.last_cron_end = model.last_cron_end
             self.running = model.running
@@ -110,7 +110,7 @@ class DjagTaskEntry(ScheduleEntry):
                     self.crontab = model.crontab.crontab
                     self.timezone = model.crontab.timezone
                 elif field == 'last_cron':
-                    self.last_cron = DjagTaskEntry.set_timezone(model.last_cron, utc_zone)
+                    self.last_cron = self.__class__.set_timezone(model.last_cron, utc_zone)
                 elif field == 'kwargs':
                     self.kwargs = dict(model.kwargs)
                 elif field in self.__class__.OPTIONS_KEYS:
@@ -262,9 +262,10 @@ class DjagTaskEntry(ScheduleEntry):
         )
 
     def __repr__(self):
-        return '<DjagTaskEntry: task_id-{0} {1} {2}(*{3}, **{4}) {5} {6}>'.format(
-            self.id, self.name, self.task, safe_repr(self.args),
-            safe_repr(self.kwargs), self.crontab, str(self.timezone)
+        return '<{0}: task_id-{1} {2} {3}(*{4}, **{5}) {6} {7}>'.format(
+            self.__class__.__qualname__, self.id, self.name, self.task,
+            safe_repr(self.args), safe_repr(self.kwargs), self.crontab,
+            str(self.timezone)
         )
 
 
