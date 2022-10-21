@@ -140,11 +140,11 @@ class DjagTaskEntry(ScheduleEntry):
             result = cron_iter.get_next(datetime).astimezone(tz=utc_zone)
             now = datetime.now(tz=utc_zone).timestamp()
 
-            interval = result.timestamp() - now
-            if self.skip_misfire and -interval > self.grace_period:  # Skip misfires when grace_period is exceeded
+            interval = now - result.timestamp()
+            if self.skip_misfire and interval > self.grace_period:  # Skip misfires when grace_period is exceeded
                 continue
             elif self.coalesce_misfire:
-                if -interval > self.grace_period:
+                if interval > self.grace_period:
                     prev_result = result
                     continue
                 else:
@@ -152,7 +152,7 @@ class DjagTaskEntry(ScheduleEntry):
                         return prev_result, 0
 
             # Default return condition
-            return result, max(0, interval)
+            return result, max(0.0, -interval)
 
     def is_due(self):
         """Determine the task's due status"""
