@@ -9,6 +9,7 @@ from django.core.validators import MaxValueValidator
 from django.utils.timezone import now
 
 from djag_scheduler import managers
+from djag_scheduler.event_queue import DjagEventQueue
 from .crontab_schedule_model import CrontabSchedule
 from .user_action_model import UserAction
 import djag_scheduler.models.user_action_model as action_choices
@@ -230,6 +231,10 @@ class PeriodicTask(models.Model):
         )
         user_action.save()
 
+        DjagEventQueue.put({
+            'event': 'TASK_CHANGED'
+        })
+
     @classmethod
     def insert_task_delete(cls, instance, *args, **kwargs):
         """Insert Task Change record"""
@@ -247,6 +252,10 @@ class PeriodicTask(models.Model):
             )
         )
         user_action.save()
+
+        DjagEventQueue.put({
+            'event': 'TASK_CHANGED'
+        })
 
 
 signals.post_delete.connect(PeriodicTask.insert_task_delete, sender=PeriodicTask)

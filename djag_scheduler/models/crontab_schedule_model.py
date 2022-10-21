@@ -139,6 +139,8 @@ class CrontabSchedule(models.Model):
         if not isinstance(instance, CrontabSchedule):
             return
 
+        # Not generating event because this cron might not be used by any task.
+        # If used, task will generate the event
         user_action = UserAction(
             action=action_choices.SCHEDULE_CHANGED,
             payload=dict(

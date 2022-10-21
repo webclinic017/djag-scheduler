@@ -9,6 +9,7 @@ from toposort import CircularDependencyError
 from toposort import toposort
 
 import djag_scheduler.models.user_action_model as action_choices
+from djag_scheduler.event_queue import DjagEventQueue
 from .periodic_task_model import PeriodicTask
 from .user_action_model import UserAction
 
@@ -158,6 +159,10 @@ class TaskDependency(models.Model):
             )
         )
         user_action.save()
+
+        DjagEventQueue.put({
+            'event': 'DEPENDENCY_CHANGED'
+        })
 
 
 signals.pre_delete.connect(TaskDependency.delete_related_dependencies, sender=TaskDependency)
