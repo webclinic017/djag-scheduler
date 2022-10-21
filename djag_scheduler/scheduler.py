@@ -401,7 +401,10 @@ class DjagScheduler(Scheduler):
         return result
 
     def apply_entry(self, entry, producer=None, **kwargs):
-        logger.info('DjagScheduler: Sending due task %s (%s)', entry.name, entry.task)
+        logger.info(
+            '%s: Sending due task %s (%s)',
+            self.__class__.__qualname__, entry.name, entry.task
+        )
         try:
             result = self.apply_async(entry, producer=producer, advance=False, **kwargs)
         except Exception as exc:
