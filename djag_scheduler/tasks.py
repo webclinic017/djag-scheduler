@@ -1,17 +1,15 @@
 """Djag scheduler tasks/connectors"""
 
-from django.core.cache import caches
-from django.core.cache.backends.base import InvalidCacheBackendError
-
 from celery.signals import task_postrun
+
+from djag_scheduler.event_queue import DjagEventQueue
 
 
 @task_postrun.connect
 def task_executed(task_id, state, *args, **kwargs):
     """Set executed task ids in django cache"""
-    try:
-        task_cache = caches['djag_scheduler']
-    except InvalidCacheBackendError:
-        return
-
-    task_cache.set(task_id, state, None)
+    DjagEventQueue.put({
+        'event': 'TASK_EXECUTED',
+        'task_id': task_id,
+        'state': state
+    })
