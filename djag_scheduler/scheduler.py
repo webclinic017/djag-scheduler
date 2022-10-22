@@ -27,6 +27,8 @@ from djag_scheduler.models import (
 
 utc_zone = ZoneInfo('UTC')
 
+MAX_WAIT_INTERVAL = getattr(settings, 'DJAG_MAX_WAIT_INTERVAL') or 0
+
 try:
     DEFAULT_TIMEZONE = ZoneInfo(
         getattr(settings, '{0}_TIMEZONE'.format(current_app.namespace))
@@ -34,8 +36,9 @@ try:
 except ZoneInfoNotFoundError:
     DEFAULT_TIMEZONE = utc_zone
 
-MAX_WAIT_INTERVAL = getattr(settings, 'DJAG_MAX_WAIT_INTERVAL', 0)
-SYNC_RETRY_INTERVAL = getattr(settings, 'DJAG_SYNC_RETRY_INTERVAL', 600)
+SYNC_RETRY_INTERVAL = getattr(settings, 'DJAG_SYNC_RETRY_INTERVAL')
+if SYNC_RETRY_INTERVAL is None or SYNC_RETRY_INTERVAL <= 0:
+    SYNC_RETRY_INTERVAL = 600
 
 logger = get_logger(__name__)
 
@@ -330,7 +333,10 @@ class DjagScheduler(Scheduler):
         # Task post execution event queue
         self._tpe_queue = queue.SimpleQueue()
 
-        self.sync_every = RESILIENT_SYNC_INTERVAL
+        # Sync params
+        self._last_sync_ts = None
+
+        self.sync_every = SYNC_RETRY_INTERVAL
         self.max_interval = MAX_WAIT_INTERVAL
 
     @classmethod
@@ -435,9 +441,21 @@ class DjagScheduler(Scheduler):
             if MAX_WAIT_INTERVAL > 0:
                 next_tick = min(next_tick, MAX_WAIT_INTERVAL)
 
-            # Wait till timeout / Cumulatively process the events with a grace period
+            # Wait till task cron / Process the events with a grace period / Sync Schedule
             while True:
+                sync_now = False
                 try:
+                    if self._to_save:
+                        next_sync = 0 if not self._last_sync_ts else (
+                                self._last_sync_ts + self.sync_every - utc_timestamp()
+                        )
+
+                        # Sync if next_sync falls before next_tick but recompute
+                        # it if an event occurs before next_sync
+                        if next_sync <= next_tick:
+                            next_tick = next_sync
+                            sync_now = True
+
                     event = DjagEventQueue.get(
                         block=True, timeout=None if next_tick == math.inf else next_tick
                     )
@@ -453,6 +471,10 @@ class DjagScheduler(Scheduler):
                     # Now just wait for little time anticipating further events
                     next_tick = 2  # No hard-and-fast reason for 2 sec
                 except DjagEventQueue.Empty:
+                    if sync_now:
+                        self.sync()
+                        self._last_sync_ts = utc_timestamp()
+
                     break
 
             # Culminate runs
@@ -461,6 +483,10 @@ class DjagScheduler(Scheduler):
 
     def reserve(self, entry):
         return entry
+
+    def should_sync(self):
+        """Handle sync in-home"""
+        return False
 
     def sync(self):
         """
