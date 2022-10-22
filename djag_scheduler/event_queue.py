@@ -2,10 +2,13 @@
 
 from django.conf import settings
 from kombu import Connection
+from kombu.simple import SimpleQueue
 
 
 class DjagEventQueue:
     """Djag Event Queue"""
+
+    Empty = SimpleQueue.Empty
 
     queue_name = 'DJAG_EVENT_QUEUE-8763051701'
     conn = Connection(
