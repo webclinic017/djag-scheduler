@@ -1,10 +1,11 @@
 """Djag Scheduler Implementation."""
 
 import math
+import queue
 import traceback
 import uuid
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from celery import current_app
@@ -14,12 +15,11 @@ from celery.beat import (
 from celery.utils.log import get_logger
 from croniter import croniter
 from django.conf import settings
-from django.core.cache import caches
-from django.core.cache.backends.base import InvalidCacheBackendError
 from django.utils.timezone import is_aware
 from kombu.utils.encoding import safe_repr
 
 import djag_scheduler.models.user_action_model as action_choices
+from djag_scheduler.event_queue import DjagEventQueue
 from djag_scheduler.models import (
     PeriodicTask, TaskDependency,
     UserAction
@@ -34,9 +34,7 @@ try:
 except ZoneInfoNotFoundError:
     DEFAULT_TIMEZONE = utc_zone
 
-DEFAULT_INTERVAL = getattr(settings, 'DJAG_DEFAULT_INTERVAL', 60)
-SCHEDULE_CHECK_INTERVAL = getattr(settings, 'DJAG_SCHEDULE_CHECK_INTERVAL', 300)
-TASK_ESTIMATED_RUN_TIME = getattr(settings, 'DJAG_TASK_ESTIMATED_RUN_TIME', 60)
+MAX_WAIT_INTERVAL = getattr(settings, 'DJAG_MAX_WAIT_INTERVAL', 0)
 RESILIENT_SYNC_INTERVAL = getattr(settings, 'DJAG_RESILIENT_SYNC_INTERVAL', 600)
 
 logger = get_logger(__name__)
@@ -131,9 +129,11 @@ class DjagTaskEntry(ScheduleEntry):
         last_cron = last_cron or self.current_cron or self.last_cron or self.cron_base
 
         try:
-            cron_iter = croniter(self.crontab, DjagTaskEntry.set_timezone(last_cron, self.timezone))
+            cron_iter = croniter(
+                self.crontab, self.__class__.set_timezone(last_cron, self.timezone)
+            )
         except:  # noqa
-            return None, SCHEDULE_CHECK_INTERVAL
+            return None, -1
 
         prev_result = None
         while True:
@@ -157,46 +157,38 @@ class DjagTaskEntry(ScheduleEntry):
     def is_due(self):
         """Determine the task's due status"""
         if not self.finalized or self.exception_cron:
-            return None, SCHEDULE_CHECK_INTERVAL
+            # Wait for the schedule change
+            return None, -1
 
         cron, sec = self.next_cron()
         if sec:
-            # Skip dependency resolution when there is time to wait.
+            # Skip dependency resolution when there is time to wait / When next_cron returns error.
             # We might need to wait longer due to unresolved dependency
             return cron, sec
 
-        next_tick = -math.inf
         for task_id, future_depends in DjagTaskDAG.get_dependencies(self.id):
             task_entry = self.scheduler.get_entry(task_id)
 
             if future_depends:
                 if task_entry.running:
                     # Wait for the running task to complete
-                    next_tick = max(next_tick, TASK_ESTIMATED_RUN_TIME)
+                    return None, -1
                 else:
                     task_cron, task_sec = task_entry.next_cron()
+                    if task_cron is None:
+                        # Wait for the exception to be fixed by the schedule change
+                        return None, -1
 
-                    # Unblock self if task's next cron falls beyond self's last cron
+                    # Only wait if the task's next cron falls before self's last cron
                     if self.last_cron and task_cron <= self.last_cron:
-                        next_tick = max(next_tick, task_sec + TASK_ESTIMATED_RUN_TIME)
-                    else:
-                        next_tick = max(next_tick, sec)
+                        return None, -1
             else:
-                if task_entry.last_cron and cron <= task_entry.last_cron:
-                    # Clearance from the dependency
-                    next_tick = max(next_tick, sec)
-                elif task_entry.running:
-                    # Wait for task to complete
-                    next_tick = max(next_tick, TASK_ESTIMATED_RUN_TIME)
-                elif self.scheduler.is_disabled(task_entry.id):
-                    # Wait for schedule changes
-                    next_tick = max(next_tick, SCHEDULE_CHECK_INTERVAL)
-                else:
-                    # Wait for task's next execution + run-time (best case scenario)
-                    _, task_sec = task_entry.next_cron()
-                    next_tick = max(next_tick, task_sec + TASK_ESTIMATED_RUN_TIME)
+                if not task_entry.last_cron or cron > task_entry.last_cron:
+                    # Wait for the dependency to run
+                    return None, -1
 
-        return cron, max(next_tick, sec)
+        # Task (self) ready for being scheduled!
+        return cron, 0
 
     def save(self, fields=('running', 'last_cron', 'last_cron_start', 'last_cron_end',
                            'exception_cron', 'total_run_count')):
@@ -321,14 +313,15 @@ class DjagScheduler(Scheduler):
         self._to_save = {}
 
         # For init-ing the schedule and task-dag for the first time
+        self._refresh_schedule = True
         self._update_schedule = True
         self._update_task_dag = True
 
-        # Clear existing changes on init
-        self._schedule_last_check = None
+        # Task post execution event queue
+        self._tpe_queue = queue.SimpleQueue()
 
         self.sync_every = RESILIENT_SYNC_INTERVAL
-        self.max_interval = DEFAULT_INTERVAL
+        self.max_interval = MAX_WAIT_INTERVAL
 
     @classmethod
     def clean_model(cls, model):
@@ -415,19 +408,46 @@ class DjagScheduler(Scheduler):
     def tick(self, *args, **kwargs):
         """Scheduler main entry point"""
 
-        # Culminate runs
-        self.culminate_tasks()
+        while True:  # Once it comes it can never go!
+            next_tick = math.inf
+            for entry in self.schedule.values():
+                cron, sec = entry.is_due()
+                if sec == 0:
+                    # Compute next_cron and consider next_sec only when next_cron() succeeds
+                    next_cron, next_sec = entry.next_cron(cron)
+                    if next_cron:
+                        next_tick = min(next_tick, next_sec)
 
-        next_tick = math.inf
-        for entry in self.schedule.values():
-            cron, sec = entry.is_due()
-            if sec == 0:
-                next_tick = min(next_tick, entry.next_cron(cron)[1])
-                self.apply_entry(entry, producer=self.producer, cron=cron)
-            else:
-                next_tick = min(next_tick, sec)
+                    self.apply_entry(entry, producer=self.producer, cron=cron)
+                elif sec > 0:  # sec can be negative value, which indicates wait for the Djag events
+                    next_tick = min(next_tick, sec)
 
-        return min(next_tick, SCHEDULE_CHECK_INTERVAL, DEFAULT_INTERVAL)
+            if MAX_WAIT_INTERVAL > 0:
+                next_tick = min(next_tick, MAX_WAIT_INTERVAL)
+
+            # Wait till timeout / Cumulatively process the events with a grace period
+            while True:
+                try:
+                    event = DjagEventQueue.get(
+                        block=True, timeout=None if next_tick == math.inf else next_tick
+                    )
+                    try:
+                        payload = event.payload
+                        if payload['event'] == 'TASK_EXECUTED':
+                            self._tpe_queue.put((payload['task_id'], payload['state']))
+                        elif payload['event'] in ('TASK_CHANGED', 'DEPENDENCY_CHANGED'):
+                            self._refresh_schedule = True
+                    except:  # noqa
+                        pass
+
+                    # Now just wait for little time anticipating further events
+                    next_tick = 2  # No hard-and-fast reason for 2 sec
+                except DjagEventQueue.Empty:
+                    break
+
+            # Culminate runs
+            if not self._tpe_queue.empty():
+                self.culminate_runs()
 
     def reserve(self, entry):
         return entry
@@ -444,13 +464,10 @@ class DjagScheduler(Scheduler):
     @property
     def schedule(self):
         """Return schedule"""
-        now = datetime.now(tz=utc_zone)
-        if not self._schedule_last_check or (
-                self._schedule_last_check + timedelta(seconds=SCHEDULE_CHECK_INTERVAL) <= now
-        ):
-            self._schedule_last_check = now
+        if self._refresh_schedule:
+            self._refresh_schedule = False
             try:
-                # One TASK_CHANGED added per SCHEDULE_CHANGED per task. Reading SCHEDULE_CHANGED to delete.
+                # One TASK_CHANGED added per SCHEDULE_CHANGED per task. Reading SCHEDULE_CHANGED just to delete.
                 changes = self.Changes.objects.filter(action__in=[
                     action_choices.TASK_CHANGED,
                     action_choices.DEPENDENCY_CHANGED,
@@ -501,32 +518,24 @@ class DjagScheduler(Scheduler):
 
         return self._schedule
 
-    def culminate_tasks(self):
+    def culminate_runs(self):
         """Invoke deactivation on the entries"""
-        try:
-            djag_cache = caches['djag_scheduler']
-        except InvalidCacheBackendError:
-            return
-
-        run_status = djag_cache.get_many(list(self._run_id_to_entry.keys()))
-        run_ids = list(run_status.keys())
-
-        if not run_ids:
-            return
-
-        for run_id in run_ids:
-            entry_id, cron = self._run_id_to_entry[run_id]
-            entry = self._entry_dict.get(entry_id)
+        while not self._tpe_queue.empty():
+            run_id, state = self._tpe_queue.get(block=False)
+            # If scheduler restarts references are lost
+            try:
+                entry_id, cron = self._run_id_to_entry[run_id]
+                entry = self._entry_dict.get(entry_id)
+            except:  # noqa
+                continue
 
             if entry:
-                if run_status[run_id] == 'SUCCESS':
+                if state == 'SUCCESS':
                     self.handle_entry_save(entry, *entry.deactivate(cron))
                 else:
                     self.handle_entry_save(entry, *entry.handle_exception(cron))
 
             del self._run_id_to_entry[run_id]
-
-        djag_cache.delete_many(run_ids)
 
     def get_entry(self, task_id):
         """Given task_id get entry"""
