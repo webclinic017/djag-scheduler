@@ -9,12 +9,14 @@ class DjagEventQueue:
     """Djag Event Queue"""
 
     Empty = SimpleQueue.Empty
+    DEFAULT_QUEUE_NAME = 'DJAG_EVENT_QUEUE-8763051701'
 
-    queue_name = 'DJAG_EVENT_QUEUE-8763051701'
     conn = Connection(
-        **getattr(settings, 'DJAG_KOMBU_CONN_ARGS', dict())
+        **(getattr(settings, 'DJAG_KOMBU_CONN_ARGS') or {})
     )
-    queue = conn.SimpleQueue(queue_name)
+    queue = conn.SimpleQueue(
+        getattr(settings, 'DJAG_EVENT_QUEUE_NAME') or DEFAULT_QUEUE_NAME
+    )
 
     @classmethod
     def get(cls, block=True, timeout=None, ack_msg=True):
