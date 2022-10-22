@@ -14,8 +14,15 @@ class DjagEventQueue:
     queue = conn.SimpleQueue(queue_name)
 
     @classmethod
-    def get(cls, block=True, timeout=None):
-        return cls.queue.get(block=block, timeout=timeout)
+    def get(cls, block=True, timeout=None, ack_msg=True):
+        try:
+            event = cls.queue.get(block=block, timeout=timeout)
+            if ack_msg:
+                event.ack()
+
+            return event
+        except Exception as e:
+            raise e
 
     @classmethod
     def put(cls, message, **kwargs):
