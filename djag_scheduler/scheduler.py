@@ -15,7 +15,7 @@ from celery.beat import (
 from celery.utils.log import get_logger
 from croniter import croniter
 from django.conf import settings
-from django.utils.timezone import is_aware
+from django.utils.timezone import is_naive
 from kombu.utils.encoding import safe_repr
 
 import djag_scheduler.models.user_action_model as action_choices
@@ -71,7 +71,9 @@ class DjagTaskEntry(ScheduleEntry):
             self.task = model.task
             self.crontab = model.crontab.crontab
             self.timezone = model.crontab.timezone
-            self.cron_base = model.cron_base
+            self.cron_base = self.__class__.set_timezone(
+                model.cron_base
+            )
             self.args = model.args
             self.kwargs = dict(model.kwargs)
 
@@ -85,7 +87,9 @@ class DjagTaskEntry(ScheduleEntry):
             self.skip_misfire = model.skip_misfire
             self.coalesce_misfire = model.coalesce_misfire
             self.grace_period = model.grace_period
-            self.last_cron = self.__class__.set_timezone(model.last_cron, utc_zone)
+            self.last_cron = self.__class__.set_timezone(
+                model.last_cron, rep_tz=utc_zone
+            )
             self.last_cron_start = model.last_cron_start
             self.last_cron_end = model.last_cron_end
             self.running = model.running
@@ -101,15 +105,16 @@ class DjagTaskEntry(ScheduleEntry):
             self.finalized = False
 
     @classmethod
-    def set_timezone(cls, dt, timezone):
+    def set_timezone(cls, dt, rep_tz=DEFAULT_TIMEZONE, res_tz=utc_zone):
         """Set timezone"""
         if not dt:
             return dt
 
-        if is_aware(dt):
-            return dt.astimezone(timezone)
-        else:
-            dt.replace(tzinfo=timezone)
+        # Format the date with the right timezone
+        if is_naive(dt):
+            dt = dt.replace(tz_info=rep_tz)
+
+        return dt.astimezone(res_tz)
 
     def update_entry(self, model, fields):
         """Update the modified fields from the model"""
@@ -120,8 +125,14 @@ class DjagTaskEntry(ScheduleEntry):
                 if field == 'crontab':
                     self.crontab = model.crontab.crontab
                     self.timezone = model.crontab.timezone
+                elif field == 'cron_base':
+                    self.cron_base = self.__class__.set_timezone(
+                        model.cron_base
+                    )
                 elif field == 'last_cron':
-                    self.last_cron = self.__class__.set_timezone(model.last_cron, utc_zone)
+                    self.last_cron = self.__class__.set_timezone(
+                        model.last_cron, rep_tz=utc_zone
+                    )
                 elif field == 'kwargs':
                     self.kwargs = dict(model.kwargs)
                 elif field in self.__class__.OPTIONS_KEYS:
@@ -143,7 +154,7 @@ class DjagTaskEntry(ScheduleEntry):
 
         try:
             cron_iter = croniter(
-                self.crontab, self.__class__.set_timezone(cron, self.timezone)
+                self.crontab, self.__class__.set_timezone(cron, res_tz=self.timezone)
             )
         except:  # noqa
             return None, -1
