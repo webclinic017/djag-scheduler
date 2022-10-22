@@ -137,13 +137,13 @@ class DjagTaskEntry(ScheduleEntry):
         except:  # noqa
             self.finalized = False
 
-    def next_cron(self, last_cron=None):
+    def next_cron(self, cron=None):
         """Determine next_cron"""
-        last_cron = last_cron or self.current_cron or self.last_cron or self.cron_base
+        cron = cron or self.current_cron or self.last_cron or self.cron_base
 
         try:
             cron_iter = croniter(
-                self.crontab, self.__class__.set_timezone(last_cron, self.timezone)
+                self.crontab, self.__class__.set_timezone(cron, self.timezone)
             )
         except:  # noqa
             return None, -1
