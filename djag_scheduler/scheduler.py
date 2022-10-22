@@ -35,9 +35,19 @@ except ZoneInfoNotFoundError:
     DEFAULT_TIMEZONE = utc_zone
 
 MAX_WAIT_INTERVAL = getattr(settings, 'DJAG_MAX_WAIT_INTERVAL', 0)
-RESILIENT_SYNC_INTERVAL = getattr(settings, 'DJAG_RESILIENT_SYNC_INTERVAL', 600)
+SYNC_RETRY_INTERVAL = getattr(settings, 'DJAG_SYNC_RETRY_INTERVAL', 600)
 
 logger = get_logger(__name__)
+
+
+def utc_time():
+    """Current UTC time"""
+    return datetime.now(tz=utc_zone)
+
+
+def utc_timestamp():
+    """Current UTC timestamp"""
+    return utc_time().timestamp()
 
 
 class DjagTaskEntry(ScheduleEntry):
@@ -138,9 +148,9 @@ class DjagTaskEntry(ScheduleEntry):
         prev_result = None
         while True:
             result = cron_iter.get_next(datetime).astimezone(tz=utc_zone)
-            now = datetime.now(tz=utc_zone).timestamp()
+            interval = utc_timestamp() - result.timestamp()
 
-            interval = now - result.timestamp()
+            # Compute next cron
             if self.skip_misfire and interval > self.grace_period:  # Skip misfires when grace_period is exceeded
                 continue
             elif self.coalesce_misfire:
@@ -214,7 +224,7 @@ class DjagTaskEntry(ScheduleEntry):
     def activate(self, cron):
         """The task djag-entry represents is in execution"""
         self.running += 1
-        self.last_cron_start = datetime.now(tz=utc_zone)
+        self.last_cron_start = utc_time()
 
         if not self.current_cron or (cron and cron > self.current_cron):
             self.current_cron = cron
@@ -236,7 +246,7 @@ class DjagTaskEntry(ScheduleEntry):
     def deactivate(self, cron):
         """The task djag-entry represents completed execution"""
         self.running -= 1
-        self.last_cron_end = datetime.now(tz=utc_zone)
+        self.last_cron_end = utc_time()
         self.total_run_count += 1
 
         if not self.last_cron or (cron and cron > self.last_cron):
