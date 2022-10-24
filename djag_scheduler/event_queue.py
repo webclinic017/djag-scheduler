@@ -20,14 +20,12 @@ class DjagEventQueue:
 
     @classmethod
     def get(cls, block=True, timeout=None, ack_msg=True):
-        try:
-            event = cls.queue.get(block=block, timeout=timeout)
-            if ack_msg:
-                event.ack()
+        """Get event, if requested acknowledge as well"""
+        event = cls.queue.get(block=block, timeout=timeout)
+        if ack_msg:
+            event.ack()
 
-            return event
-        except Exception as e:
-            raise e
+        return event
 
     @classmethod
     def put(cls, message, **kwargs):
