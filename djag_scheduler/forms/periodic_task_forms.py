@@ -1,10 +1,9 @@
 """Periodic Task Forms"""
 
-from django import forms
-from django.forms.widgets import Select
-
 from celery import current_app
 from celery.utils import cached_property
+from django import forms
+from django.forms.widgets import Select, TextInput
 
 from djag_scheduler.models import PeriodicTask
 
@@ -48,11 +47,19 @@ class TaskChoiceField(forms.ChoiceField):
         return True
 
 
+class ExceptionCronWidget(TextInput):
+    """Widget for exception cron"""
+    template_name = "widgets/exception_cron_widget.html"
+
+
 class PeriodicTaskForm(forms.ModelForm):
     """Form that lets you create and modify periodic tasks."""
 
     task = TaskChoiceField(
         label='Task (registered)'
+    )
+    exception_cron = forms.DateTimeField(
+        widget=ExceptionCronWidget, required=False
     )
 
     class Meta:
@@ -60,3 +67,15 @@ class PeriodicTaskForm(forms.ModelForm):
 
         model = PeriodicTask
         exclude = ()
+
+    def clean(self):
+        """Ensure exception cron is only cleared but not altered"""
+        cleaned_data = super().clean()
+        new_exception_cron = cleaned_data.get('exception_cron')
+
+        if new_exception_cron is not None and new_exception_cron != self.instance.exception_cron:
+            self.add_error(
+                'exception_cron', 'Exception cron can only be cleared'
+            )
+
+        return cleaned_data
