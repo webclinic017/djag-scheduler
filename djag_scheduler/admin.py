@@ -19,26 +19,11 @@ from djag_scheduler.forms import (
 from djag_scheduler.widgets import JSONFieldWidget
 
 
-class TaskDependeeInline(admin.TabularInline):
-    model = TaskDependency
-    fk_name = 'depender'
-    verbose_name = 'Dependent On'
-    verbose_name_plural = 'Dependent On'
-
-
-class TaskDependerInline(admin.TabularInline):
-    model = TaskDependency
-    fk_name = 'dependee'
-    verbose_name = 'Dependent By'
-    verbose_name_plural = 'Dependent By'
-
-
 class PeriodicTaskAdmin(admin.ModelAdmin):
     """Admin-interface for periodic tasks."""
 
     form = PeriodicTaskForm
     model = PeriodicTask
-    inlines = (TaskDependeeInline, TaskDependerInline)
     date_hierarchy = 'date_changed'
     list_display = ('task', 'name', 'crontab', 'enabled', 'running',
                     'last_cron', 'exception_cron', 'total_run_count')
