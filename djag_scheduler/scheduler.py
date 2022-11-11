@@ -393,8 +393,10 @@ class DjagScheduler(Scheduler):
 
     def apply_async(self, entry, producer=None, advance=True, **kwargs):
         """Override apply_sync to include custom task_id and to activate entry"""
-        run_id = str(uuid.uuid4())
         cron = kwargs.pop('cron', None)
+        run_id = '{0}-{1}-{2}'.format(
+            entry.id, cron.timestamp(), str(uuid.uuid4())
+        )
 
         # Try passing djag_run_dt and on TypeError pass with out it.
         entry.kwargs['djag_run_dt'] = cron
