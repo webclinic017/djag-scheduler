@@ -545,7 +545,7 @@ class DjagScheduler(Scheduler):
                     self._update_schedule = False
                     self._schedule = {}
 
-                    for model in self.Model.objects.enabled():
+                    for model in self.Model.objects.all():
                         if model.pk not in self._entry_dict:
                             self.__class__.clean_model(model)  # Clean model when it is loaded for the first time
                             self._entry_dict[model.pk] = self.Entry(self, model, app=self.app)
@@ -554,7 +554,8 @@ class DjagScheduler(Scheduler):
                                 model, task_updates[model.pk]
                             )  # Update the modified fields in the task-entry
 
-                        self._schedule[model.pk] = self._entry_dict[model.pk]
+                        if model.enabled:
+                            self._schedule[model.pk] = self._entry_dict[model.pk]
 
                 # Dependencies changed! Update dependency DAG.
                 if self._update_task_dag:
