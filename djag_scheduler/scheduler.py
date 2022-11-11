@@ -449,8 +449,8 @@ class DjagScheduler(Scheduler):
                 elif sec > 0:  # sec can be negative value, which indicates wait for the Djag events
                     next_tick = min(next_tick, sec)
 
-            if MAX_WAIT_INTERVAL > 0:
-                next_tick = min(next_tick, MAX_WAIT_INTERVAL)
+            if self.max_interval > 0:
+                next_tick = min(next_tick, self.max_interval)
 
             # Wait till task cron / Process the events with a grace period / Sync Schedule
             while True:
