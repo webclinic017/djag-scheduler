@@ -333,7 +333,6 @@ class DjagScheduler(Scheduler):
 
         self._schedule = {}
         self._entry_dict = {}
-        self._run_id_to_entry = {}
         self._to_save = {}
 
         # For init-ing the schedule and task-dag for the first time
@@ -417,7 +416,6 @@ class DjagScheduler(Scheduler):
 
             raise exc
 
-        self._run_id_to_entry[run_id] = entry.id, cron
         self.handle_entry_save(entry, *entry.activate(cron))
 
         return result
@@ -574,8 +572,10 @@ class DjagScheduler(Scheduler):
             run_id, state = self._tpe_queue.get(block=False)
             # If scheduler restarts references are lost
             try:
-                entry_id, cron = self._run_id_to_entry[run_id]
-                entry = self._entry_dict.get(entry_id)
+                entry_id, cron_epoch, _ = run_id.split('-', 2)
+
+                entry = self._entry_dict.get(int(entry_id))
+                cron = datetime.fromtimestamp(float(cron_epoch), utc_zone)
             except:  # noqa
                 continue
 
@@ -584,8 +584,6 @@ class DjagScheduler(Scheduler):
                     self.handle_entry_save(entry, *entry.deactivate(cron))
                 else:
                     self.handle_entry_save(entry, *entry.handle_exception(cron))
-
-            del self._run_id_to_entry[run_id]
 
     def get_entry(self, task_id):
         """Given task_id get entry"""
