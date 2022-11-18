@@ -4,11 +4,12 @@
 
 ## Overview
 
-- Djag scheduler associates scheduling information with celery tasks
+- Djag scheduler associates scheduling information with the celery tasks
 - The task schedule is persisted in the database using Django ORM
-- Djag scheduler allows for defining task dependencies
+- Djag scheduler supports task dependencies
 - Djag scheduler can handle misfire events
 - The schedules can be managed through the Django admin interface
+- Djag scheduler adopts event driven approach
 
 ## Quick Setup
 
@@ -33,50 +34,28 @@
         'djag_scheduler'
    ]
    ```
-
-3. Setup [``Django CACHE``](https://docs.djangoproject.com/en/dev/topics/cache/#setting-up-the-cache).
-   You can choose any cache backend. But it is important to configure ``'djag_scheduler'`` cache. For example:
    
-   ```python
-   CACHES = {
-       'default': {
-           'BACKEND': 'django.core.cache.backends.memcached.PyLibMCCache',
-           'LOCATION': '127.0.0.1:11211',
-       },
-        
-       # Djag Scheduler cache
-       'djag_scheduler': {
-           'BACKEND': 'django.core.cache.backends.memcached.PyLibMCCache',
-           'LOCATION': '127.0.0.1:11211',
-           'TIMEOUT': None
-       }
-   }
-   ```
-   
-   > **Caution**: [Local-memory caching](https://docs.djangoproject.com/en/dev/topics/cache/#local-memory-caching)
-   > will not work. See [Case for Django Cache](#case-for-django-cache)
-   
-4. It is highly recommended to configure [``Django Timezone``](https://docs.djangoproject.com/en/dev/ref/settings/#use-tz)
+3. It is highly recommended to configure [``Django Timezone``](https://docs.djangoproject.com/en/dev/ref/settings/#use-tz)
    since djag-scheduler relies on Django ORM.
 
    ```python
    USE_TZ = True
    ```
 
-5. [Optional Configurations](#optional-configurations) (In Django project settings).
+4. [Optional Configurations](#optional-configurations) (In Django project settings).
    
    ```python
    ...
    
    # Djag Scheduler Configuration
    [CELERY_NAMESPACE]_TIMEZONE = 'UTC'
-   DJAG_DEFAULT_INTERVAL = 60
-   DJAG_SCHEDULE_CHECK_INTERVAL = 300
-   DJAG_TASK_ESTIMATED_RUN_TIME = 60
-   DJAG_RESILIENT_SYNC_INTERVAL = 600
+   DJAG_MAX_WAIT_INTERVAL = 0
+   DJAG_SYNC_RETRY_INTERVAL = 600
+   DJAG_KOMBU_CONN_ARGS = {}
+   DJAG_EVENT_QUEUE_NAME = 'DJAG_EVENT_QUEUE-8763051701'
    ```
 
-6. Run migrations
+5. Run migrations
 
    ```shell
    python manage.py migrate
@@ -84,13 +63,13 @@
 
 Now you can run the server, navigate to the Django admin interface and start creating schedules.
 
-> **Note:** This is the configuration for djag-scheduler, and this alone will not run the tasks. 
-> See [Running Celery Services](#running-celery-services) for task execution
+> **Note:** This creates the schedules for the djag-scheduler, and this alone will not run the tasks. 
+> See [Running Celery Services](#running-celery-services) for the schedule execution
 
 ## Running Celery Services
 
-Djag Scheduler provides a [custom scheduler](https://docs.celeryproject.org/en/stable/userguide/periodic-tasks.html#using-custom-scheduler-classes)
-which can be used with celery services.
+Djag Scheduler provides a [custom scheduler class](https://docs.celeryproject.org/en/stable/userguide/periodic-tasks.html#using-custom-scheduler-classes)
+which can be used with the celery services.
 
 1. [Configure celery](https://docs.celeryproject.org/en/stable/django/first-steps-with-django.html)
    in your Django project and add [celery tasks](https://docs.celeryproject.org/en/stable/django/first-steps-with-django.html#using-the-shared-task-decorator)
@@ -102,36 +81,38 @@ which can be used with celery services.
    celery -A [project_name] worker --loglevel=info
    ```
    
-3. Run celery beat service
+3. Run celery beat service from the Django project root
 
    ```shell
    celery -A [project_name] beat -l info --scheduler djag_scheduler.scheduler:DjagScheduler 
    ```
 
-Djag Scheduler will fetch the schedule from the database and starts executing the tasks. Both worker and 
+Djag Scheduler will fetch the schedules from the database and starts executing the tasks. Both worker and 
 beat services can be started in [one process](https://django-celery-beat.readthedocs.io/en/latest/#example-running-periodic-tasks).
 Services can be [daemonized](https://docs.celeryproject.org/en/stable/userguide/daemonizing.html) as well
 
 ## Optional Configurations
 
-- [[CELERY_NAMESPACE]_TIMEZONE](https://docs.celeryproject.org/en/stable/django/first-steps-with-django.html):
-  Djag uses the same default timezone the celery is configured to use (Timezone can be configured per crontab).
-  Default: UTC
+- **[[CELERY_NAMESPACE]_TIMEZONE](https://docs.celeryproject.org/en/stable/django/first-steps-with-django.html)**:
+  Djag scheduler uses the same default timezone the celery is configured to use (Timezone can be configured per crontab).
+  **Default**: ``UTC``
   
-- DJAG_DEFAULT_INTERVAL: Djag scheduler's default max loop interval. Default (sec): 60 
 
-- DJAG_SCHEDULE_CHECK_INTERVAL: The interval at which djag checks for schedule changes. In the interim schedule 
-  is considered unchanged. Default (sec): 300
+- **DJAG_MAX_WAIT_INTERVAL**: Defines how long scheduler can be stuck in await of an event. Non-positive values will tell 
+  the scheduler to wait for events indefinitely (Djag scheduler can be completely event driven). **Default (sec)**: ``0``
+
   
-- DJAG_TASK_ESTIMATED_RUN_TIME: Hint djag-scheduler about task execution period. Default (sec): 60 
+- **DJAG_SYNC_RETRY_INTERVAL**: The interval for retrying the sync from Python to DB for sync-failed tasks (Djag scheduler
+  continuously syncs the task metadata like last-cron, exceptions, run-counts, etc...). **Default (sec)**: ``600``
 
-- DJAG_RESILIENT_SYNC_INTERVAL: The scheduling stats of a task are synced to the database at each task activation 
-  and deactivation. This option is there to build resiliency if the past syncs fail. Default (sec): 600
+  
+- **DJAG_KOMBU_CONN_ARGS**: Djag scheduler implements event driven approach by leveraging the message broker. It is fair to
+  assume that the project which uses celery have a message broker configured. This option is used in creating [kombu.Connection](https://docs.celeryq.dev/projects/kombu/en/stable/reference/kombu.html#connection)
+  object to the message broker. **Default (dict)**: ``{}``
 
-> **Note:** Almost everyone should configure these options according to their needs instead of relying on defaults.
-> Let's consider you have a task with Skip Misfires, and the following configuration: **Estimated Run Time > Default Interval 
-> \> Task's Grace Period**. Djag scheduler might end up skipping the task just because you hinted at it with a higher estimate.
-> In general, increase your grace periods with higher runtime estimates.
+
+- **DJAG_EVENT_QUEUE_NAME**: The [queue](https://docs.celeryq.dev/projects/kombu/en/stable/reference/kombu.simple.html#kombu.simple.SimpleQueue) 
+  through which the Djag scheduler events are exchanged. **Default**: ``DJAG_EVENT_QUEUE-8763051701``
 
 ## Dependency Resolution
 
@@ -141,21 +122,40 @@ The following conditions are to be met for the task (depender) to execute:
 
 - There should be a task (depender) crontab event pending execution (on-time, delayed, coalesced, ...).
 
-- For each dependency, there should be at least one new executed dependee event (on-time, delayed, coalesced, ...) since 
-  the depender's last event execution start time.
+- For each dependency, depender crontab event should fall before or on the dependee last executed cron.
 
-Sometimes we might need to hold for the depender's execution (Ex: consume whole output) to execute the next version of the
-dependee. Such dependencies can be defined by checking the [``Future Depends``](#admin-interface) flag. The future dependencies 
-differ in the first time execution. For the first time, dependence is assumed to be resolved irrespective of the dependee's 
-status, and the subsequent versions follow the same rules as described above.
+Sometimes we might need to wait for the depender's execution to execute the next version of the dependee (A<sub>1</sub> 
+-> B<sub>1</sub>, B<sub>1</sub> -> None but B<sub>2</sub> -> A<sub>1</sub>). Such dependencies between dependee -> depender 
+can be defined by checking the [``Future Depends``](#admin-interface) flag. Task-B (dependee) can not future depend on
+Task-A (depender) unless Task-A (depender) depends on Task-B (dependee). The future dependency is assumed to be resolved
+when the depender (Task-A) never ran or when the depender (Task-A) is not running and the depender (Task-A) next cron
+falls beyond dependee (Task-B) last cron.
+
+### Cycle Detection
+Djag scheduler performs basic cycle detection. Cycle detection becomes tricky with future dependencies in place. It is
+easy to trick Djag scheduler into insolvency (state of being stuck). Consider following tasks and their crontabs,
+dependencies respectively. A depends on B and C, B depends on C and C future depends on A.
+
+![Task-DAG](assets/images/Task-DAG.png)
+
+Let's assume all tasks have same base-cron (starting time). A is waiting for B, C; B is waiting for C but C future is 
+waiting for A. By the rules of Dependency Resolution C will run first, post that B will run, and at last A will run.
+After the first run, task's state will be as follows:
+
+![Task-State](assets/images/Task-State.png)
+
+Now again by the rules of Dependency Resolution, A can not run because it's next-cron falls after B's last-cron, B can 
+not run because it's next-cron falls after C's last-cron, and C can not run because A's next-cron falls before C's
+last-cron; This freezes the Task-DAG. Therefore, Future-Dependency should be used with the sense of meaning.
 
 ## Admin Interface
 
-Most options are straightforward. The following listed options might require some attention:
+This section is to help with the different form fields of the admin interface. Most of the fields are straightforward.
+The following listed fields might require some attention:
 
 ### Crontabs
 
-- Crontabs are managed through [``croniter``](https://github.com/taichino/croniter), and timezones through [``django-timezone-field``](https://github.com/mfogel/django-timezone-field)
+- Crontabs are managed through [``croniter``](https://github.com/kiorky/croniter), and timezones through [``django-timezone-field``](https://github.com/mfogel/django-timezone-field)
 
 - By default, timezone is set to [``[CELERY_NAMESPACE]_TIMEZONE``](https://docs.celeryproject.org/en/stable/django/first-steps-with-django.html) 
   else ``UTC``.
@@ -168,36 +168,29 @@ Most options are straightforward. The following listed options might require som
 
 - Coalesce Misfires: Run one event (latest among misfires) for all the misfires
   
-- Cron Base: Initial time for evaluating crontab. Time displayed will be in Django's [``TIME_ZONE``](https://docs.djangoproject.com/en/3.2/ref/settings/#time-zone).
-  Cron base is set to current time by default.
+- Cron Base: Initial time for evaluating crontab. The time displayed will be in Django's [``TIME_ZONE``](https://docs.djangoproject.com/en/3.2/ref/settings/#time-zone).
+  In the backend the cron base will be converted to crontab specific timezone.
 
 - Task's ``*args or **kwargs`` can be set under ``Arguments`` section. The rendered JSON widget 
   comes from [``django-json-widget``](https://github.com/jmrivas86/django-json-widget)
+  
+- The celery tasks can declare optional **``djag_run_dt``** argument for getting the execution cron of the task.
 
 ### Task Dependencies
 
-- Future Depends: The first version is independent, but the future versions of the depender depends on the dependee.
+- Future Depends: Declares future dependency. Task-B can not future depend on Task-A unless Task-A depends on Task-B. 
   See [``Dependency Resolution``]()
   
 ### User Actions
 
-- The idea is to provide a mechanism for creating actions, which serves as control signals for running tasks.
-  For generic purposes, only ``Unclassified Action`` is added to the drop-down. If you are extending this project,
-  you can add actions and create forms per action (See [``user_action_forms``](https://github.com/m0hithreddy/djag-scheduler/blob/main/djag_scheduler/forms/user_action_forms.py)).
+- The idea is to provide a mechanism for creating actions, which serves as control signals for the running tasks.
+  For generic purposes, only ``Unclassified Action`` is added to the drop-down.
 
-- Some internal actions are created for djag's functioning.
+- Some internal actions are created for the Djag scheduler's functioning.
 
 ### User Action Audits
 
 - Audit for [``User Actions``](#user-actions)
-
-## Case for Django Cache
-
-Djag Scheduler requires the task status for proper dependency resolution. This can be communicated from the worker 
-service either by configuring the celery result backend or by using celery [``signals``](https://docs.celeryproject.org/en/stable/userguide/signals.html#task-postrun)
-with Django cache as a bridge between worker and beat services. For now, the Django cache solution is adopted. 
-For the same reason, cache backends like [``Local-memory caching``](https://docs.djangoproject.com/en/dev/topics/cache/#local-memory-caching) 
-whose cache store is unique to Django instance will not work.
 
 ## Initial Credits
 
