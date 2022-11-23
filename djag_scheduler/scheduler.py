@@ -245,9 +245,10 @@ class DjagTaskEntry(ScheduleEntry):
 
         return self.save(fields=('running', 'last_cron_start'))
 
-    def handle_exception(self, cron):
+    def handle_exception(self, cron, state):
         """The task djag-entry represents resulted in a exception"""
-        self.running -= 1
+        if state == 'POST-SUBMIT':
+            self.running -= 1
 
         if not self.exception_cron or (cron and cron < self.exception_cron):
             self.exception_cron = cron
@@ -412,7 +413,7 @@ class DjagScheduler(Scheduler):
                     raise exc
         except Exception as exc:  # noqa
             # Notify DjagTaskEntry of exception
-            self.handle_entry_save(entry, *entry.handle_exception(cron))
+            self.handle_entry_save(entry, *entry.handle_exception(cron, 'PRE-SUBMIT'))
 
             raise exc
 
@@ -583,7 +584,7 @@ class DjagScheduler(Scheduler):
                 if state == 'SUCCESS':
                     self.handle_entry_save(entry, *entry.deactivate(cron))
                 else:
-                    self.handle_entry_save(entry, *entry.handle_exception(cron))
+                    self.handle_entry_save(entry, *entry.handle_exception(cron, 'POST-SUBMIT'))
 
     def get_entry(self, task_id):
         """Given task_id get entry"""
