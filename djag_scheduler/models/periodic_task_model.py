@@ -161,6 +161,9 @@ class PeriodicTask(models.Model):
         verbose_name = 'periodic task'
         verbose_name_plural = 'periodic tasks'
 
+    def __dummy_func(self, *args, **kwargs):
+        pass
+
     def clean(self):
         """Clean model data"""
         if not self.cron_base:
@@ -169,10 +172,21 @@ class PeriodicTask(models.Model):
         if self.skip_misfire and self.coalesce_misfire:
             raise ValidationError('Misfires cant be skipped and coalesced at once')
 
-        if not isinstance(json.loads(json.dumps(self.args)), list):
+        try:
+            self.__dummy_func(**self.args)
+        except: # noqa
+            pass
+        else:
             raise ValidationError({
-                'args': ValidationError('"args" should be a JSON array')}
-            )
+                'args': ValidationError('args should be a JSON array')
+            })
+
+        try:
+            self.__dummy_func(**self.kwargs)
+        except: # noqa
+            raise ValidationError({
+                'kwargs': ValidationError('kwargs should not be a JSON array')
+            })
 
         if (self.skip_misfire or self.coalesce_misfire) and not self.grace_period:
             raise ValidationError({
