@@ -5,7 +5,7 @@ import queue
 import traceback
 import uuid
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from celery import current_app
@@ -253,8 +253,8 @@ class DjagTaskEntry(ScheduleEntry):
         if not self.exception_cron or (cron and cron < self.exception_cron):
             self.exception_cron = cron
 
-            # Update current_cron to last_cron to reschedule self.exception_cron (when cleared)
-            self.current_cron = self.last_cron
+            # Update current_cron to reschedule self.exception_cron (when cleared)
+            self.current_cron = self.exception_cron - timedelta(seconds=1)
 
         return self.save(fields=('running', 'exception_cron'))
 
