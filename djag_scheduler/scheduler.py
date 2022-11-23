@@ -571,13 +571,13 @@ class DjagScheduler(Scheduler):
         """Invoke deactivation on the entries"""
         while not self._tpe_queue.empty():
             run_id, state = self._tpe_queue.get(block=False)
-            # If scheduler restarts references are lost
             try:
                 entry_id, cron_epoch, _ = run_id.split('-', 2)
 
                 entry = self._entry_dict.get(int(entry_id))
                 cron = datetime.fromtimestamp(float(cron_epoch), utc_zone)
             except:  # noqa
+                # Stale entries in the queue might be deleted now!
                 continue
 
             if entry:
