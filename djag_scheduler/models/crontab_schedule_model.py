@@ -85,8 +85,18 @@ class CrontabSchedule(models.Model):
 
         verbose_name = 'crontab'
         verbose_name_plural = 'crontabs'
-        ordering = ['month_of_year', 'day_of_month',
-                    'day_of_week', 'hour', 'minute', 'timezone']
+        ordering = [
+            'month_of_year', 'day_of_month', 'day_of_week', 'hour', 'minute', 'timezone'
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                name='crontab-unique-constraint',
+                fields=[
+                    'minute', 'hour', 'day_of_month', 'month_of_year',
+                    'day_of_week', 'timezone'
+                ]
+            )
+        ]
 
     def clean(self):
         """Clean model data"""
