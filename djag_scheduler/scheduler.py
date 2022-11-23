@@ -228,12 +228,12 @@ class DjagTaskEntry(ScheduleEntry):
             )
         except ValueError:
             # Model is deleted
-            return True, 'deleted'
+            return True, 'DELETED'
         except:  # noqa
             # Save error
-            return False, 'unknown'
+            return False, 'UNKNOWN'
 
-        return True, 'success'
+        return True, 'SUCCESS'
 
     def activate(self, cron):
         """The task djag-entry represents is in execution"""
@@ -381,7 +381,7 @@ class DjagScheduler(Scheduler):
 
     def handle_entry_save(self, entry, saved, status):
         """Handle DjagTaskEntry save"""
-        if status == 'deleted':
+        if status == 'DELETED':
             self.delete_entry(entry.id)
         elif saved:
             # If entry saved remove it from to_save dict
@@ -528,7 +528,7 @@ class DjagScheduler(Scheduler):
                         self._update_schedule = True
 
                         payload = change.payload
-                        if payload['status'] == 'deleted':
+                        if payload['status'] == 'DELETED':
                             self.delete_entry(payload['task_id'])
                         elif task_id := payload['task_id']:
                             if task_id not in task_updates:

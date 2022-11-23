@@ -1,18 +1,16 @@
 """Periodic-Task model"""
 
-import json
-
-from django.db import models
-from django.db.models import signals
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator
+from django.db import models
+from django.db.models import signals
 from django.utils.timezone import now
 
+import djag_scheduler.models.user_action_model as action_choices
 from djag_scheduler import managers
 from djag_scheduler.event_queue import DjagEventQueue
 from .crontab_schedule_model import CrontabSchedule
 from .user_action_model import UserAction
-import djag_scheduler.models.user_action_model as action_choices
 
 
 class PeriodicTask(models.Model):
@@ -239,7 +237,7 @@ class PeriodicTask(models.Model):
                 task_id=instance.pk,
                 task_name=instance.name,
                 task=instance.task,
-                status='changed',
+                status='CHANGED',
                 fields=fields
             )
         )
@@ -261,7 +259,7 @@ class PeriodicTask(models.Model):
                 task_id=instance.pk,
                 task_name=instance.name,
                 task=instance.task,
-                status='deleted',
+                status='DELETED',
                 fields=()
             )
         )
