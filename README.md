@@ -169,7 +169,7 @@ The following listed fields might require some attention:
 - Coalesce Misfires: Run one event (latest among misfires) for all the misfires
   
 - Cron Base: Initial time for evaluating crontab. The time displayed will be in Django's [``TIME_ZONE``](https://docs.djangoproject.com/en/3.2/ref/settings/#time-zone).
-  In the backend the cron base will be converted to crontab specific timezone.
+  In the backend the cron base will be converted to crontab timezone before evaluation.
 
 - Task's ``*args or **kwargs`` can be set under ``Arguments`` section. The rendered JSON widget 
   comes from [``django-json-widget``](https://github.com/jmrivas86/django-json-widget)
@@ -191,6 +191,11 @@ The following listed fields might require some attention:
 ### User Action Audits
 
 - Audit for [``User Actions``](#user-actions)
+
+## Contributing
+
+``djag-scheduler`` is one of the important component of the project [I](mailto:dev.m0hithreddy@mail.com) work on. I would
+be trying my fullest to keep it bug-free. Any contribution in form of bug-report, bug-fix and new feature is welcomed.
 
 ## Initial Credits
 
