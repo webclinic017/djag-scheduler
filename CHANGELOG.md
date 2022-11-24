@@ -5,3 +5,12 @@
 
 ### 1.0.0
 - Bug Fix: Crontab constructed wrongly
+
+### 2.0.0
+- Rework on dependency resolution and re-define future dependency.
+- Adopt event driven approach.
+- Remove dependency on Django Cache
+- Handle task related exceptions.
+- Tasks can declare djag_run_dt argument to get the current execution cron
+- Meaningful optional configurations :)
+- Enhancements in admin interface and many more
