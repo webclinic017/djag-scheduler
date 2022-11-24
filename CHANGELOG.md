@@ -1,11 +1,5 @@
 # ChangeLog
 
-### 0.0.1
-- Initial Release
-
-### 1.0.0
-- Bug Fix: Crontab constructed wrongly
-
 ### 2.0.0
 - Rework on dependency resolution and re-define future dependency.
 - Adopt event driven approach.
@@ -14,3 +8,9 @@
 - Tasks can declare djag_run_dt argument to get the current execution cron
 - Meaningful optional configurations :)
 - Enhancements in admin interface and many more
+
+### 1.0.0
+- Bug Fix: Crontab constructed wrongly
+
+### 0.0.1
+- Initial Release
