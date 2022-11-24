@@ -5,7 +5,7 @@
 - Adopt event driven approach.
 - Remove dependency on Django Cache
 - Handle task related exceptions.
-- Tasks can declare djag_run_dt argument to get the current execution cron
+- Tasks can optionally declare djag_run_dt argument to get the current execution cron
 - Meaningful optional configurations :)
 - Enhancements in admin interface and many more
 
