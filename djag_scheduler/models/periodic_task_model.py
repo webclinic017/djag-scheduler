@@ -159,9 +159,6 @@ class PeriodicTask(models.Model):
         verbose_name = 'periodic task'
         verbose_name_plural = 'periodic tasks'
 
-    def __dummy_func(self, *args, **kwargs):
-        pass
-
     def clean(self):
         """Clean model data"""
         if not self.cron_base:
@@ -170,25 +167,19 @@ class PeriodicTask(models.Model):
         if self.skip_misfire and self.coalesce_misfire:
             raise ValidationError('Misfires cant be skipped and coalesced at once')
 
-        try:
-            self.__dummy_func(**self.args)
-        except: # noqa
-            pass
-        else:
+        if (self.skip_misfire or self.coalesce_misfire) and not self.grace_period:
+            raise ValidationError({
+                'grace_period': ValidationError('Grace period must be set for skipping or coalescing misfires')
+            })
+
+        if not isinstance(self.args, list):
             raise ValidationError({
                 'args': ValidationError('args should be a JSON array')
             })
 
-        try:
-            self.__dummy_func(**self.kwargs)
-        except: # noqa
+        if not isinstance(self.kwargs, dict):
             raise ValidationError({
-                'kwargs': ValidationError('kwargs should not be a JSON array')
-            })
-
-        if (self.skip_misfire or self.coalesce_misfire) and not self.grace_period:
-            raise ValidationError({
-                'grace_period': ValidationError('Grace period must be set for skipping or coalescing misfires')
+                'kwargs': ValidationError('kwargs should be a JSON object')
             })
 
     def save(self, *args, insert_task_change=True, update_fields=None, **kwargs):
