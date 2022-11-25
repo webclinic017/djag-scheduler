@@ -1,5 +1,8 @@
 # ChangeLog
 
+### 2.0.1
+- Handle exceptions related to optional configurations
+
 ### 2.0.0
 - Rework on dependency resolution and re-define future dependency.
 - Adopt event driven approach.
