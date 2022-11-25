@@ -12,10 +12,10 @@ class DjagEventQueue:
     DEFAULT_QUEUE_NAME = 'DJAG_EVENT_QUEUE-8763051701'
 
     conn = Connection(
-        **(getattr(settings, 'DJAG_KOMBU_CONN_ARGS') or {})
+        **(getattr(settings, 'DJAG_KOMBU_CONN_ARGS', None) or {})
     )
     queue = conn.SimpleQueue(
-        getattr(settings, 'DJAG_EVENT_QUEUE_NAME') or DEFAULT_QUEUE_NAME
+        getattr(settings, 'DJAG_EVENT_QUEUE_NAME', None) or DEFAULT_QUEUE_NAME
     )
 
     @classmethod

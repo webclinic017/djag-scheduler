@@ -15,7 +15,7 @@ import djag_scheduler.models.user_action_model as action_choices
 
 
 def default_timezone():
-    """Return timezone string from Django settings `CELERY_TIMEZONE` variable.
+    """Return timezone string from Django settings `[CELERY_NAMESPACE]_TIMEZONE` variable.
     If is not defined or is not a valid timezone, return `"UTC"` instead.
     """
     try:

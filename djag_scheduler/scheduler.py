@@ -27,16 +27,16 @@ from djag_scheduler.models import (
 
 utc_zone = ZoneInfo('UTC')
 
-MAX_WAIT_INTERVAL = getattr(settings, 'DJAG_MAX_WAIT_INTERVAL') or 0
+MAX_WAIT_INTERVAL = getattr(settings, 'DJAG_MAX_WAIT_INTERVAL', None) or 0
 
 try:
     DEFAULT_TIMEZONE = ZoneInfo(
         getattr(settings, '{0}_TIMEZONE'.format(current_app.namespace))
     )
-except ZoneInfoNotFoundError:
+except: # noqa
     DEFAULT_TIMEZONE = utc_zone
 
-SYNC_RETRY_INTERVAL = getattr(settings, 'DJAG_SYNC_RETRY_INTERVAL')
+SYNC_RETRY_INTERVAL = getattr(settings, 'DJAG_SYNC_RETRY_INTERVAL', None)
 if SYNC_RETRY_INTERVAL is None or SYNC_RETRY_INTERVAL <= 0:
     SYNC_RETRY_INTERVAL = 600
 
