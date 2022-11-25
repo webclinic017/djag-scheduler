@@ -136,13 +136,13 @@ Djag scheduler performs basic cycle detection. Cycle detection becomes tricky wi
 easy to trick Djag scheduler into insolvency (state of being stuck). Consider following tasks and their crontabs,
 dependencies respectively. A depends on B and C, B depends on C and C future depends on A.
 
-![Task-DAG](assets/images/Task-DAG.png)
+![Task-DAG](https://raw.githubusercontent.com/m0hithreddy/djag-scheduler/main/assets/images/Task-DAG.png)
 
 Let's assume all tasks have same base-cron (starting time). A is waiting for B, C; B is waiting for C but C future is 
 waiting for A. By the rules of Dependency Resolution C will run first, post that B will run, and at last A will run.
 After the first run, task's state will be as follows:
 
-![Task-State](assets/images/Task-State.png)
+![Task-State](https://raw.githubusercontent.com/m0hithreddy/djag-scheduler/main/assets/images/Task-State.png)
 
 Now again by the rules of Dependency Resolution, A can not run because it's next-cron falls after B's last-cron, B can 
 not run because it's next-cron falls after C's last-cron, and C can not run because A's next-cron falls before C's
